@@ -1,4 +1,3 @@
-
 local function create_model_camvid()
     -- from https://code.google.com/p/cuda-convnet2/source/browse/layers/layers-imagenet-1gpu.cfg
     -- this is AlexNet that was presented in the One Weird Trick paper. http://arxiv.org/abs/1404.5997
@@ -22,32 +21,23 @@ local function create_model_camvid()
     features:add(nn.ReLU(true))
     features:add(nn.SpatialMaxPooling(3,3,2,2))                     -- 13 -> 6
 
-    features = features:cuda()
-
     local classifier = nn.Sequential()
-    classifier:add(nn.SpatialConvolution(256, 33, 1, 1))
+    classifier:add(nn.SpatialConvolution(256, 32, 1, 1))
     classifier:add(nn.ReLU(true))
-    classifier:add(nn.SpatialBatchNormalization(33,1e-3))
-    classifier:add(nn.SpatialConvolution(33, 33, 1, 1))
+    classifier:add(nn.SpatialBatchNormalization(32,1e-3))
+    classifier:add(nn.SpatialConvolution(32, 32, 1, 1))
     classifier:add(nn.SpatialUpSamplingBilinear({oheight=960, owidth=960}))
-
-    classifier = classifier:cuda()
 
     local model = nn.Sequential()
         :add(features)
         :add(classifier)
-        :cuda()
 
     model.imageSize = 960
     model.imageCrop = 960
 
-    local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
+    local loss = nn.CrossEntropyCriterion()
 
-    return {
-        model = model,
-        loss = loss
-    }
+    return model, loss
 end
 
-return create_model_camvid()
+return create_model_camvid

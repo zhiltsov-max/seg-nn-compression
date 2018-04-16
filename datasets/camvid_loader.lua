@@ -5,6 +5,40 @@ local CamVid = {}
 CamVid.__index = CamVid
 CamVid.input_channel_count = 3
 CamVid.class_count = 32
+CamVid.classes = {
+    'Void',
+    'Archway',
+    'Bicyclist',
+    'Bridge',
+    'Building',
+    'Car',
+    'CartLuggagePram',
+    'Child',
+    'Column_Pole',
+    'Fence',
+    'LaneMkgsDriv',
+    'LaneMkgsNonDriv',
+    'Misc_Text',
+    'MotorcycleScooter',
+    'OtherMoving',
+    'ParkingBlock',
+    'Pedestrian',
+    'Road',
+    'RoadShoulder',
+    'Sidewalk',
+    'SignSymbol',
+    'Sky',
+    'SUVPickupTruck',
+    'TrafficCone',
+    'TrafficLight',
+    'Train',
+    'Tree',
+    'Truck_Bus',
+    'Tunnel',
+    'VegetationMisc',
+    'Animal',
+    'Wall'
+}
 CamVid.train_data = nil
 CamVid.test_data = nil
 CamVid.image_size = { width = 0, height = 0 }
@@ -40,15 +74,7 @@ function CamVid.get_paths(list_file_path, dataset_path)
 end
 
 local function crop(img, crop_size)
-    local new_img = torch.Tensor(img:size(1), crop_size.height, crop_size.width)
-        :zero()
-    local pos = {
-            {},
-            {1, math.min(img:size(2), crop_size.height)},
-            {1, math.min(img:size(3), crop_size.width)}
-        }
-    new_img[pos] = img[pos]
-    return new_img
+    return image.crop(img, 'c', crop_size.width, crop_size.height)
 end
 
 function CamVid.load_sample(self, image_path, gt_path, crop_size)
@@ -66,7 +92,7 @@ function CamVid.load_sample(self, image_path, gt_path, crop_size)
     end
 
     if gt_img ~= nil then
-        gt_img = gt_img:squeeze():float() + 1
+        gt_img = gt_img:squeeze():float():add(1)
     end
 
     return img, gt_img
@@ -117,6 +143,59 @@ end
 
 function CamVid.get_iterators(self)
     return self.train_data, self.val_data
+end
+
+local colormap_rgb = {}
+colormap_rgb[1 + 0] = {0, 0, 0}
+colormap_rgb[1 + 1] = {192, 0, 128}
+colormap_rgb[1 + 2] = {0, 128, 192}
+colormap_rgb[1 + 3] = {0, 128, 64}
+colormap_rgb[1 + 4] = {128, 0, 0}
+colormap_rgb[1 + 5] = {64, 0, 128}
+colormap_rgb[1 + 6] = {64, 0, 192}
+colormap_rgb[1 + 7] = {192, 128, 64}
+colormap_rgb[1 + 8] = {192, 192, 128}
+colormap_rgb[1 + 9] = {64, 64, 128}
+colormap_rgb[1 + 10] = {128, 0, 192}
+colormap_rgb[1 + 11] = {192, 0, 64}
+colormap_rgb[1 + 12] = {128, 128, 64}
+colormap_rgb[1 + 13] = {192, 0, 192}
+colormap_rgb[1 + 14] = {128, 64, 64}
+colormap_rgb[1 + 15] = {64, 192, 128}
+colormap_rgb[1 + 16] = {64, 64, 0}
+colormap_rgb[1 + 17] = {128, 64, 128}
+colormap_rgb[1 + 18] = {128, 128, 192}
+colormap_rgb[1 + 19] = {0, 0, 192}
+colormap_rgb[1 + 20] = {192, 128, 128}
+colormap_rgb[1 + 21] = {128, 128, 128}
+colormap_rgb[1 + 22] = {64, 128, 192}
+colormap_rgb[1 + 23] = {0, 0, 64}
+colormap_rgb[1 + 24] = {0, 64, 64}
+colormap_rgb[1 + 25] = {192, 64, 128}
+colormap_rgb[1 + 26] = {128, 128, 0}
+colormap_rgb[1 + 27] = {192, 128, 192}
+colormap_rgb[1 + 28] = {64, 0, 64}
+colormap_rgb[1 + 29] = {192, 192, 0}
+colormap_rgb[1 + 30] = {64, 128, 64}
+colormap_rgb[1 + 31] = {6, 192, 0}
+colormap_rgb[1 + 255] = {0, 0, 0}
+
+local function apply_colormap_r(c)
+    return colormap_rgb[c][1]
+end
+local function apply_colormap_g(c)
+    return colormap_rgb[c][2]
+end
+local function apply_colormap_b(c)
+    return colormap_rgb[c][3]
+end
+
+function CamVid.paint_segmentation(self, class_index_map)
+    local rgb_maps = class_index_map:clone():repeatTensor(3, 1, 1)
+    rgb_maps[1]:apply(apply_colormap_r)
+    rgb_maps[2]:apply(apply_colormap_g)
+    rgb_maps[3]:apply(apply_colormap_b)
+    return rgb_maps
 end
 
 function CamVid.create(t)
