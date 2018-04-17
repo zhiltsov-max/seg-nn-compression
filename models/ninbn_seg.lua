@@ -38,10 +38,10 @@ local function create_model_camvid()
     nin = nin:cuda()
 
     local classifier = nn.Sequential()
-    classifier:add(nn.SpatialConvolution(384, 33, 1, 1))
+    classifier:add(nn.SpatialConvolution(384, 32, 1, 1))
     classifier:add(nn.ReLU(true))
-    classifier:add(nn.SpatialBatchNormalization(33,1e-3))
-    classifier:add(nn.SpatialConvolution(33, 33, 1, 1))
+    classifier:add(nn.SpatialBatchNormalization(32,1e-3))
+    classifier:add(nn.SpatialConvolution(32, 32, 1, 1))
     classifier:add(nn.SpatialUpSamplingBilinear({oheight=512, owidth=512}))
 
     classifier = classifier:cuda()
@@ -57,10 +57,7 @@ local function create_model_camvid()
     local loss = cudnn.SpatialCrossEntropyCriterion()
     loss = loss:cuda()
 
-    return {
-        model = model,
-        loss = loss
-    }
+    return model, loss
 end
 
 return create_model_camvid()

@@ -166,7 +166,7 @@ local function create_model_camvid(options)
 
     -- Classifier
     model:add(nn.SpatialBatchNormalization(64,1e-3))
-    model:add(nn.SpatialFullConvolution(64, 33, 1, 1))
+    model:add(nn.SpatialFullConvolution(64, 32, 1, 1))
 
     model = model:cuda()
 
@@ -203,10 +203,7 @@ local function create_model_camvid(options)
     local loss = cudnn.SpatialCrossEntropyCriterion()
     loss = loss:cuda()
 
-    return {
-        model = model,
-        loss = loss
-    }
+    return model, loss
 end
 
 return create_model_camvid

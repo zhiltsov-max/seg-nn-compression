@@ -1,7 +1,9 @@
 local nn = require 'nn'
-require 'cunn'
+local cunn = require 'cunn'
+local cudnn = require 'cudnn'
 
 local Convolution = nn.SpatialConvolution
+local Upconvolution = nn.SpatialFullConvolution
 local Avg = nn.SpatialAveragePooling
 local ReLU = nn.ReLU
 local Max = nn.SpatialMaxPooling
@@ -90,13 +92,13 @@ local function create_model_camvid(options)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(nn.SpatialBatchNormalization(bottomdim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(Upconvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
+        upsampling:add(ReLU(true))
 
-        upsampling:add(nn.SpatialBatchNormalization(internaldim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(internaldim, outputdim, 5, 5, 1, 1, 2, 2))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(Upconvolution(internaldim, outputdim, 5, 5, 1, 1, 2, 2))
+        upsampling:add(ReLU(true))
 
         return upsampling
     end
@@ -105,17 +107,17 @@ local function create_model_camvid(options)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(nn.SpatialBatchNormalization(bottomdim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(Upconvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
+        upsampling:add(ReLU(true))
 
-        upsampling:add(nn.SpatialBatchNormalization(internaldim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(internaldim, internaldim, 3, 3, 1, 1, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(Upconvolution(internaldim, internaldim, 3, 3, 1, 1, 1, 1))
+        upsampling:add(ReLU(true))
 
-        upsampling:add(nn.SpatialBatchNormalization(internaldim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
+        upsampling:add(ReLU(true))
 
         return upsampling
     end
@@ -124,13 +126,13 @@ local function create_model_camvid(options)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(nn.SpatialBatchNormalization(bottomdim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(bottomdim, internaldim, 3, 3, 2, 2, 1, 1, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(Upconvolution(bottomdim, internaldim, 3, 3, 2, 2, 1, 1, 1, 1))
+        upsampling:add(ReLU(true))
 
-        upsampling:add(nn.SpatialBatchNormalization(internaldim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
+        upsampling:add(ReLU(true))
 
         return upsampling
     end
@@ -138,11 +140,91 @@ local function create_model_camvid(options)
     local function upsamplingblock4(bottomdim, outputdim)
 
         local upsampling = nn.Sequential()
-        upsampling:add(nn.SpatialBatchNormalization(bottomdim,1e-3))
-        upsampling:add(nn.SpatialFullConvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
-        upsampling:add(nn.ReLU(true))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
+        upsampling:add(ReLU(true))
 
         return upsampling
+    end
+
+    local function upsamplingblock5(bottomdim, outputdim)
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
+        -- upsampling:add(ReLU(true))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.CAddTable(true))
+            :add(ReLU(true))
+    end
+
+    local function upsamplingblock6(bottomdim, outputdim)
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(ReLU(true))
+        upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
+        -- upsampling:add(ReLU(true))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.JoinTable(2))
+    end
+
+    local function upsamplingblock7(bottomdim, outputdim)
+        local internaldim = bottomdim
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(ReLU(true))
+        upsampling:add(Upconvolution(bottomdim, internaldim, 4, 4, 2, 2, 1, 1))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(ReLU(true))
+        upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
+        -- upsampling:add(ReLU(true))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.JoinTable(2))
+    end
+
+    local function upsamplingblock8(bottomdim, outputdim)
+        local internaldim = bottomdim
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(ReLU(true))
+        upsampling:add(Upconvolution(bottomdim, internaldim, 4, 4, 2, 2, 1, 1))
+        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(ReLU(true))
+        upsampling:add(Upconvolution(internaldim, outputdim, 5, 5, 1, 1, 2, 2))
+        -- upsampling:add(ReLU(true))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.CAddTable(true))
     end
 
     -- Creates block with the followning structure:
@@ -150,7 +232,7 @@ local function create_model_camvid(options)
     --   /                     -> residual connection ->
     -- input dim = output dim
     -- bottom block input dim = bottom block output dim
-    local sblock = function(bottomblock, residualblock, upsamplingblock)
+    local sblock1 = function(bottomblock, residualblock, upsamplingblock)
         local block = nn.Sequential()
         if (bottomblock ~= nil) and (residualblock ~= nil) then
             block:add(residualblock)
@@ -219,32 +301,27 @@ local function create_model_camvid(options)
     print(' | ResNet-' .. depth .. ' ImageNet')
 
     -- The ResNet ImageNet model
-    model:add(Convolution(3,64,5,5,2,2,2,2)) -- original 3,64,7,7,2,2,3,3
+    model:add(Convolution(3,64,7,7,2,2,3,3)) -- original 3,64,7,7,2,2,3,3
     model:add(SBatchNorm(64))
     model:add(ReLU(true))
     model:add(Max(3,3,2,2,1,1))
-    model:add(layer(block, 64, def[1]))
     -- creation order matters
+    local block1residual = layer(block, 64, def[1])
     local block2residual = layer(block, 128, def[2], 2)
     local block3residual = layer(block, 256, def[3], 2)
     local block4residual = layer(block, 512, def[4], 2)
 
-    local block4 = sblock2(nil, block4residual, upsamplingblock4(512, 256))
-    local block3 = sblock2(block4, block3residual, upsamplingblock4(512, 128))
-    local block2 = sblock2(block3, block2residual, upsamplingblock4(256, 64))
-    model:add(block2)
-
-    local block1 = nn.Sequential()
-    block1:add(upsamplingblock4(64, 64))
-    block1:add(nn.SpatialBatchNormalization(64,1e-3))
-    block1:add(nn.SpatialFullConvolution(64, 64, 4, 4, 2, 2, 1, 1))
-    block1:add(nn.ReLU(true))
+    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
+    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
+    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
+    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 64))
+											  :add(upsamplingblock5(64, 64))
     model:add(block1)
 
-
     -- Classifier
-    model:add(nn.SpatialBatchNormalization(64,1e-3))
-    model:add(nn.SpatialFullConvolution(64, 32, 1, 1))
+    model:add(SBatchNorm(64,1e-3))
+    model:add(ReLU(true))
+    model:add(Upconvolution(64, 32, 1, 1))
 
     model = model:cuda()
 

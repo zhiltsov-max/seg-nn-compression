@@ -2,36 +2,54 @@ require 'optim'
 
 local solver = {}
 
-function solver.init(solver, model, dataset, options)
-    solver.sgd = {}
-    solver.sgd.learningRate = options.learningRate
-    solver.sgd.momentum = options.momentum
-    solver.sgd.learningRateDecay = options.lrDecay
-    solver.sgd.learningRateDecayStep = options.lrDecayStep
+function solver.init(self, model, cost, dataset, options, previous_state)
+    self.state = previous_state or {
+        sgd = {
+            learningRate = options.learningRate,
+            momentum = options.momentum,
+            learningRateDecay = options.lrDecay,
+            learningRateDecayStep = options.lrDecayStep
+        },
+        weightDecay = options.weightDecay,
+        epoch = 1
+    }
 
-    solver.dataset = dataset
-    solver.train_data, _ = dataset:get_iterators()
-    solver.image_size = {height = options.imHeight, width = options.imWidth}
-    solver.minibatchCount = math.floor(#solver.dataset.train_data / options.batchSize)
+    self.model = model:cuda()
+    self.cost = cost:cuda()
+    self.dataset = dataset
+    self.train_data, _ = dataset:get_iterators()
+    self.image_size = {height = options.imHeight, width = options.imWidth}
 
-    solver.batchSize = options.batchSize
-    solver.weightDecay = options.weightDecay
-
-    solver.inputs = torch.CudaTensor(options.batchSize, 
+    self.minibatch_count = math.floor(#self.dataset.train_data / options.batchSize)
+    self.batch_size = options.batchSize
+    self.inputs = torch.CudaTensor(options.batchSize,
         options.channels, options.imHeight, options.imWidth)
-    solver.targets = torch.CudaTensor(options.batchSize, 
-        options.labelHeight, options.labelWidth)
+    self.targets = torch.CudaTensor(options.batchSize,
+        options.imHeight, options.imWidth)
 
-    solver.weights, solver.dE_dw = model.model:getParameters() -- should be called after model:cuda()
-    
-    -- solver.confusion = optim.ConfusionMatrix(options.dataClasses)
+    self.weights, self.dE_dw = model:getParameters() -- should be called after model:cuda()
 
-    return solver
+    return self
 end
 
-function solver.update_learning_rate(solver, epoch)
-    local sgd = solver.sgd
-    if (epoch ~= 0) and (epoch % sgd.learningRateDecayStep == 0) then 
+function solver.get_state(self)
+    return self.state
+end
+
+function solver.get_epoch(self)
+    return self.state.epoch
+end
+
+function solver.set_epoch(self, epoch)
+    self.state.epoch = epoch
+end
+
+function solver.update(self)
+    local epoch = self.state.epoch
+    local sgd = self.state.sgd
+    if ((sgd.learningRateDecayStep ~= 0) and
+        (epoch % sgd.learningRateDecayStep == 0)
+       ) then
         sgd.learningRate = sgd.learningRate * sgd.learningRateDecay
     end
 end
@@ -43,11 +61,11 @@ function solver.load_batch(self, minibatch)
     self.inputs:zero()
     self.targets:zero()
 
-    for i = 1, self.batchSize do
-        local dataset_index = shuffle[(minibatch - 1) * self.batchSize + i]
+    for i = 1, self.batch_size do
+        local dataset_index = shuffle[(minibatch - 1) * self.batch_size + i]
         local dataset_entry = train_data[dataset_index]
-        self.inputs[i]:copy(dataset_entry[1]:clone())
-        self.targets[i]:copy(dataset_entry[2]:clone())
+        self.inputs[i]:copy(dataset_entry[1])
+        self.targets[i]:copy(dataset_entry[2])
     end
 
     return self.inputs:cuda(), self.targets:cuda()
@@ -57,63 +75,60 @@ function solver.shuffle_data(self)
     self.shuffle = torch.randperm(#self.train_data)
 end
 
-function solver.train(solver, model, epoch)
-    -- Perform one training epoch
+function solver.run_training_epoch(self)
+    local epoch = self.state.epoch
+    local model = self.model
+    local cost = self.cost
+    local weights = self.weights
+    local sgd = self.state.sgd
+    local dE_dw = self.dE_dw
+    local weightDecay = self.state.weightDecay
 
-    local sgd = solver.sgd
-    local criterion = model.loss
-    local net = model.model
-    local minibatchCount = solver.minibatchCount
+    self:update()
+    self:shuffle_data()
 
-    net:training()
-    solver:update_learning_rate(epoch)
-    solver:shuffle_data()
+    model:training()
 
     local epoch_time = 0
 
-    for minibatch = 1, minibatchCount do
+    local minibatch_count = self.minibatch_count
+    for minibatch = 1, minibatch_count do
         local minibatch_time = sys.clock()
 
         local batch_loading_time = minibatch_time
-        local x, y = solver:load_batch(minibatch)
+        local x, y = self:load_batch(minibatch)
         batch_loading_time = sys.clock() - batch_loading_time
 
         -- create closure to evaluate E(W) and dE/dW
         local eval_E = function(weights)
             -- reset gradients
-            solver.dE_dw:zero()
+            dE_dw:zero()
 
-            -- evaluate function for complete mini batch
-            local f = net:forward(x)
-            local loss = criterion:forward(f, y)
-            -- estimate gradients dE_dw (stored in net)
-            local dE_df = criterion:backward(f, y)
-            net:backward(solver.inputs, dE_df)
+            -- evaluate function for complete minibatch
+            local f = model:forward(x)
+            local loss = cost:forward(f, y)
+            -- estimate gradients dE_dw (stored in model)
+            local dE_df = cost:backward(f, y)
+            model:backward(x, dE_df)
 
-            if solver.weightDecay ~= 0 then
+            if (weightDecay ~= 0) then
                 local norm = torch.norm
 
-                -- Loss:
-                loss = loss + solver.weightDecay * 0.5 * (norm(weights, 2) ^ 2)
+                -- Loss with weight decay:
+                loss = loss + weightDecay * 0.5 * (norm(weights, 2) ^ 2)
 
                 -- Gradients:
-                solver.dE_dw:add(solver.weightDecay, weights)
+                dE_dw:add(weightDecay, weights)
             end
 
             -- print("w:", weights:min(), weights:max())
             -- print("f:", f:min(), f:max())
 
-            return loss, solver.dE_dw
+            return loss, dE_dw
         end
 
         local optim_time = sys.clock()
-        -- Perform SGD step:
-        local sgd_state = {
-            learningRate = sgd.learningRate,
-            momentum = sgd.momentum,
-            learningRateDecay = sgd.learningRateDecay
-        }
-        local _, loss = optim.sgd(eval_E, solver.weights, sgd)
+        local _, loss = optim.sgd(eval_E, weights, sgd)
         optim_time = sys.clock() - optim_time
 
         minibatch_time = sys.clock() - minibatch_time
@@ -132,18 +147,20 @@ function solver.train(solver, model, epoch)
                 " | " ..
                     "lr %.2e" ..
                     ", loss %.4f",
-                epoch, minibatch, minibatchCount,
-                epoch_time, minibatch_time, 
-                batch_loading_time, optim_time, 
-                sgd.learningRate, 
+                epoch, minibatch, minibatch_count,
+                epoch_time, minibatch_time,
+                batch_loading_time, optim_time,
+                sgd.learningRate,
                 loss[1]
             ),
-            "\r") 
+            "\r")
     end
+
+    self:set_epoch(epoch + 1)
 
     collectgarbage()
 
-    return net, loss
+    return model, loss
 end
 
 return solver

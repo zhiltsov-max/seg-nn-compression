@@ -147,7 +147,7 @@ local function create_model_camvid(options)
     model:add(nn.ReLU(true))
     model:add(nn.SpatialBatchNormalization(64,1e-3))
     -- Classifier
-    model:add(nn.SpatialFullConvolution(64, 33, 1, 1))
+    model:add(nn.SpatialFullConvolution(64, 32, 1, 1))
 
     --         Loss = 0.15113922953606 at iteration 500, lr=1, decay=0
     -- -- Upsampling
@@ -181,7 +181,7 @@ local function create_model_camvid(options)
     -- model:add(nn.ReLU(true))
     -- model:add(nn.SpatialBatchNormalization(64,1e-3))
     -- -- Classifier
-    -- model:add(nn.SpatialFullConvolution(64, 33, 1, 1))
+    -- model:add(nn.SpatialFullConvolution(64, 32, 1, 1))
 
     model = model:cuda()
 
@@ -218,10 +218,7 @@ local function create_model_camvid(options)
     local loss = cudnn.SpatialCrossEntropyCriterion()
     loss = loss:cuda()
 
-    return {
-        model = model,
-        loss = loss
-    }
+    return model, loss
 end
 
 return create_model_camvid
