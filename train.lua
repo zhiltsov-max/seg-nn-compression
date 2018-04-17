@@ -40,10 +40,14 @@ function solver.get_epoch(self)
     return self.state.epoch
 end
 
+function solver.set_epoch(self, epoch)
+    self.state.epoch = epoch
+end
+
 function solver.update(self)
     local epoch = self.state.epoch
     local sgd = self.state.sgd
-    if ((epoch ~= 0) and (sgd.learningRateDecayStep ~= 0) and
+    if ((sgd.learningRateDecayStep ~= 0) and
         (epoch % sgd.learningRateDecayStep == 0)
        ) then
         sgd.learningRate = sgd.learningRate * sgd.learningRateDecay
@@ -152,7 +156,7 @@ function solver.run_training_epoch(self)
             "\r")
     end
 
-    self.state.epoch = epoch + 1
+    self:set_epoch(epoch + 1)
 
     collectgarbage()
 

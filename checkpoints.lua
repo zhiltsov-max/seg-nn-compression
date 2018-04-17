@@ -75,7 +75,7 @@ function checkpoints.restore_model_state(source_state, model)
 end
 
 function checkpoints.load(checkpoint_path)
-    local checkpoint_info = torch.load(checkpoint_info, 'ascii')
+    local checkpoint_info = torch.load(checkpoint_path, 'ascii')
     local checkpoint_root_path = paths.dirname(checkpoint_path)
     local model_path = paths.concat(checkpoint_root_path, checkpoint_info.model_file)
     local solver_path = paths.concat(checkpoint_root_path, checkpoint_info.solver_file)

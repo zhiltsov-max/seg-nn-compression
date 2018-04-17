@@ -83,10 +83,11 @@ function main()
         solver = require 'train'
 
         if (opt.snapshot ~= 'none') then
-            print('Loading checkpoint from \'' .. checkpoint_path .. '\'')
+            print('Loading checkpoint from \'' .. opt.snapshot .. '\'')
             local old_model_state, old_solver_state = checkpoints.load(opt.snapshot)
             models.restore_model_state(old_model_state, model)
             solver:init(model, cost, dataset, opt, old_solver_state)
+            solver:set_epoch(solver:get_epoch() + 1)
         else
             solver:init(model, cost, dataset, opt)
         end
@@ -117,7 +118,7 @@ function main()
                 test(model, dataset, epoch, true, opt)
             end
 
-            epoch = epoch + 1
+            epoch = solver:get_epoch()
         end
     end
 
