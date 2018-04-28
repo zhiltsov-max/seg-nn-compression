@@ -6,7 +6,7 @@ LD_LIBRARY_PATH=$HOME/install/cudnn-5.0/cuda-8.0/lib64:$LD_LIBRARY_PATH
 WORKING_DIR=$1
 
 MODELS_DIR="models"
-MODEL="resnet18closure5_seg.lua"
+MODEL="deeplab_largefov_msc.lua"
 
 cp "${MODELS_DIR}/${MODEL}" ${WORKING_DIR}
 
@@ -24,9 +24,9 @@ CMD="th main.lua \
   --inferencePath="${INFERENCE_DIR}" \
   --imWidth=512 --imHeight=512 \
   --learningRate=1 --batchSize=4 \
-  --testStep=1 --weightDecay=1e-5 \
-  --epochs=3 --snapshotStep=1 \
-  --lrDecay=0.1 --lrDecayStep=100 \
+  --testStep=200 --weightDecay=1e-5 \
+  --epochs=1000 --snapshotStep=200 \
+  --lrDecay=0.1 --lrDecayStep=200 \
   "
 
 ${CMD}

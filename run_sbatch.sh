@@ -12,4 +12,4 @@ fi
 
 cp "${TARGET}" "${OUTPUT_DIR}/exec.sh"
 
-sbatch --time=05:00:00 -p gpu -N 1 -o ${OUTPUT_FILE} ${TARGET} "${OUTPUT_DIR}"
+sbatch --time=12:00:00 -p gpu -N 1 -o ${OUTPUT_FILE} ${TARGET} "${OUTPUT_DIR}"

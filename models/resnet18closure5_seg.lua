@@ -311,11 +311,11 @@ local function create_model_camvid(options)
     local block3residual = layer(block, 256, def[3], 2)
     local block4residual = layer(block, 512, def[4], 2)
 
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 64))
-											  :add(upsamplingblock5(64, 64))
+    local block4 = sblock1(nil, block4residual, upsamplingblock4(512, 256))
+    local block3 = sblock1(block4, block3residual, upsamplingblock4(256, 128))
+    local block2 = sblock1(block3, block2residual, upsamplingblock4(128, 64))
+    local block1 = sblock1(block2, block1residual, upsamplingblock4(64, 64))
+											  :add(upsamplingblock4(64, 64))
     model:add(block1)
 
     -- Classifier

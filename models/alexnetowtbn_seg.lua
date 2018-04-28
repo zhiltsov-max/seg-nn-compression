@@ -1,3 +1,7 @@
+local nn = require 'nn'
+local cunn = require 'cunn'
+local cudnn = require 'cudnn'
+
 local function create_model_camvid()
     -- from https://code.google.com/p/cuda-convnet2/source/browse/layers/layers-imagenet-1gpu.cfg
     -- this is AlexNet that was presented in the One Weird Trick paper. http://arxiv.org/abs/1404.5997
@@ -26,16 +30,15 @@ local function create_model_camvid()
     classifier:add(nn.ReLU(true))
     classifier:add(nn.SpatialBatchNormalization(32,1e-3))
     classifier:add(nn.SpatialConvolution(32, 32, 1, 1))
-    classifier:add(nn.SpatialUpSamplingBilinear({oheight=960, owidth=960}))
+    classifier:add(nn.SpatialUpSamplingBilinear({oheight=512, owidth=512}))
 
     local model = nn.Sequential()
         :add(features)
         :add(classifier)
+        :cuda()
 
-    model.imageSize = 960
-    model.imageCrop = 960
-
-    local loss = nn.CrossEntropyCriterion()
+	local loss = cudnn.SpatialCrossEntropyCriterion()
+	loss = loss:cuda()
 
     return model, loss
 end
