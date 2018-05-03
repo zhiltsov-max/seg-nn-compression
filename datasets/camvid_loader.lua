@@ -55,10 +55,7 @@ function CamVid.get_paths(list_file_path, dataset_path)
     local img_paths = {}
     local gt_paths = {}
 
-    local file = io.open(list_file_path, 'r')
-    if file == nil then
-        error("Failed to open list file '" .. list_file_path .. "'.")
-    end
+    local file = assert(io.open(list_file_path, 'r'))
     local line = file:read()
     while line ~= nil do
         local col1, col2 = line:match("(.+) (.+)")
@@ -69,6 +66,8 @@ function CamVid.get_paths(list_file_path, dataset_path)
 
         line = file:read()
     end
+
+    file:close()
 
     return img_paths, gt_paths
 end
@@ -105,14 +104,14 @@ function CamVid.get_statistics(self, list)
         local img = image.load(list[i][1], self.input_channel_count, 'float')
         for c = 1, self.input_channel_count do
             dataset_mean[c] = dataset_mean[c] + img:select(1, c):mean()
-            dataset_std[c] = dataset_std[c] + img:select(1, c):std()
+            -- dataset_std[c] = dataset_std[c] + math.sqrt(img:select(1, c):std())
         end
     end
 
     dataset_mean:mul(1.0 / #list)
-    dataset_std:mul(1.0 / (#list - 1.0))
+    -- dataset_std:sqrt():mul(1.0 / (#list - 1.0))
 
-    return {mean = dataset_mean, std = dataset_std}
+    return {mean = dataset_mean} -- , std = dataset_std}
 end
 
 function CamVid.preprocess_input(self, input, stats)
@@ -211,8 +210,12 @@ local function load(dataset_path, options)
 
         local result = {}
         for i = 1, #img_paths do
-            io.open(img_paths[i], 'r')
-            io.open(gt_paths[i], 'r')
+            f = assert(io.open(img_paths[i], 'r'))
+            f:close()
+
+            f = assert(io.open(gt_paths[i], 'r'))
+            f:close()
+
             table.insert(result, {img_paths[i], gt_paths[i]})
         end
         
