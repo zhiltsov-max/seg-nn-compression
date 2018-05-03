@@ -71,15 +71,6 @@ local function create_model_camvid(options)
     model:add(BatchNorm(64))
     model:add(Max(3, 3, 2, 2, 1, 1))
 
-    model:add(Conv(64, 128, 3, 3, 1, 1, 1, 1))
-    model:add(ReLU(true))
-    model:add(BatchNorm(128))
-    model:add(Max(3, 3, 2, 2, 1, 1))
-    
-
-    model:add(Upconv(128, 64, 4, 4, 2, 2, 1, 1))
-    model:add(ReLU(true))
-    model:add(BatchNorm(64))
 
     model:add(Upconv(64, 32, 4, 4, 2, 2, 1, 1))
     model:add(ReLU(true))

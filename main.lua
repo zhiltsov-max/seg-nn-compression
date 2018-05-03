@@ -2,7 +2,7 @@ require 'pl'
 local lapp = require 'pl.lapp'
 
 local nn = require 'nn'
-local cunn = require 'cunn'
+require 'cunn'
 local cudnn = require 'cudnn'
 local models = require 'models.init'
 local datasets = require 'datasets.common_loader'
@@ -21,6 +21,7 @@ function parse_args(arg)
         --learningRate          (default 5e-4)        learning rate
         --lrDecay               (default 1e-1)        Learning rate decay
         --lrDecayStep           (default 100)         Learning rate decay step (in # epochs)
+        --lrClip                (default 1e4)         Learning rate clipping
         --weightDecay           (default 5e-4)        L2 penalty on the weights
         --momentum              (default 0.9)         Momentum
         -b,--batchSize          (default 10)          Batch size
@@ -64,7 +65,12 @@ function main()
     cutorch.setDevice(opt.devid)
     print("Running on device " .. opt.devid)
 
+    cudnn.benchmark = true
+    cudnn.fastest = true
+    -- cudnn.verbose = true
+
     local model, cost = models.init(opt)
+    cudnn.convert(model, cudnn)
     print(model)
     print("Output shape is: " ..
         table.concat(

@@ -17,13 +17,13 @@ function models.init(options)
         local optnet = require 'optnet'
         print('Trying to optimize memory usage with optnet...')
 
-        local sampleInput = torch.zeros(1, 3, options.imHeight, options.imWidth):type(options.tensorType)
+        local sampleInput = torch.zeros(options.batchSize, 3, options.imHeight, options.imWidth):type(options.tensorType)
 
         collectgarbage()
         model:forward(sampleInput)
         mem1 = optnet.countUsedMemory(model)
 
-        optnet.optimizeMemory(model, sampleInput, {inplace = true, reuseBuffers = true, mode = 'training'})
+        optnet.optimizeMemory(model, sampleInput, {inplace = true, mode = 'training'})
 
         collectgarbage()
         model:forward(sampleInput)

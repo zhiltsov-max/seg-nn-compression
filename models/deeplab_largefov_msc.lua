@@ -3,8 +3,8 @@
 -- Implementation from https://github.com/Aliases/torch-models
 
 local nn = require 'nn'
-local nngraph = require 'nngraph'
-local cunn = require 'cunn'
+require 'nngraph'
+require 'cunn'
 local cudnn = require 'cudnn'
 
 local MaxPooling2D = nn.SpatialMaxPooling
@@ -20,11 +20,9 @@ local Dropout = nn.Dropout
 -- In caffe layers, default stride = 1 , pad = 0
 -- Same in torch
 
-local function DirectPath(nIn, receptiveField)
+local function DirectPath(nIn, receptiveField, noClasses)
   -- Input is data
-  local noChannels = 1
-  local noClasses = 5
-  local nInp = nIn -- noChannels only for one, varies for rest
+  local nInp = nIn
   local nOut = 128
   local stride = receptiveField or 1 -- stride
   -- 8 for path0
@@ -80,9 +78,7 @@ local function kerEff(ker, hole)
   return ker + (ker -1) * (hole - 1)
 end
 
-local function lastPart(nIn, nOut_)
-  local noClasses = 32
-  local nInp = nIn or 512
+local function lastPart(noClasses)
   -- input is pool4
   local net = nn.Sequential()
   net:add(Convolution(512, 512, 5, 5, 1, 1, 2, 2)) -- stride not specified -- hole = 2, ker =3, ker_eff = ker_h + (ker_h -1 )*(hole-1),
@@ -107,26 +103,26 @@ end
 
 function create_model_camvid(options)
   local noClasses = 32
-  local noChannels = 1
+  local nInChannels = 3
 
   local input = nn.Identity()()
 
 
-  local data_ms = DirectPath(noChannels, 8)(input)
+  local data_ms = DirectPath(nInChannels, 8, noClasses)(input)
 
-  local pool1 = Intermediate(noChannels, 2)(input)
-  local pool1_ms = DirectPath(64, 4)(pool1)
+  local pool1 = Intermediate(nInChannels, 2)(input)
+  local pool1_ms = DirectPath(64, 4, noClasses)(pool1)
 
   local pool2 = Intermediate(64, 2)(pool1)
-  local pool2_ms = DirectPath(128, 2)(pool2)
+  local pool2_ms = DirectPath(128, 2, noClasses)(pool2)
 
   local pool3 = Intermediate(128, 2, 3)(pool2)
-  local pool3_ms = DirectPath(256, 1)(pool3)
+  local pool3_ms = DirectPath(256, 1, noClasses)(pool3)
 
   local pool4 = Intermediate(256, 1, 3)(pool3)
-  local pool4_ms = DirectPath(512, 1)(pool4)
+  local pool4_ms = DirectPath(512, 1, noClasses)(pool4)
 
-  local fc8_ = lastPart()(pool4)
+  local fc8_ = lastPart(noClasses)(pool4)
 
   -- fuse layers
   -- fuse data_ms , pool1_ms , pool2_ms , pool3_ms, pool4_ms, fc8_$Exp
@@ -140,9 +136,9 @@ function create_model_camvid(options)
 
   output = nn.SpatialUpSamplingNearest(8)(output)
 
-  -- model = nn.gModule({input}, {data_ms, pool1_ms, pool2_ms, pool3_ms, pool4_ms, fc8_, output})
-  model = nn.gModule({input}, {output})
-    :cuda()
+  -- local model = nn.gModule({input}, {data_ms, pool1_ms, pool2_ms, pool3_ms, pool4_ms, fc8_, output})
+  local model = nn.gModule({input}, {output})
+  model =  model:cuda()
 
   local loss = cudnn.SpatialCrossEntropyCriterion()
   loss = loss:cuda()
@@ -150,4 +146,4 @@ function create_model_camvid(options)
   return model, loss
 end
 
-return create_model_camvid()
+return create_model_camvid

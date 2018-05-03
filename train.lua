@@ -8,17 +8,20 @@ function solver.init(self, model, cost, dataset, options, previous_state)
             learningRate = options.learningRate,
             momentum = options.momentum,
             learningRateDecay = options.lrDecay,
-            learningRateDecayStep = options.lrDecayStep
+            learningRateDecayStep = options.lrDecayStep,
+            learningRateClip = options.lrClip or 1e100,
+	        weightDecay = options.weightDecay
         },
-        weightDecay = options.weightDecay,
         epoch = 1
     }
 
     self.model = model:cuda()
     self.cost = cost:cuda()
+
     self.dataset = dataset
     self.train_data, _ = dataset:get_iterators()
     self.image_size = {height = options.imHeight, width = options.imWidth}
+    self:shuffle_data()
 
     self.minibatch_count = math.floor(#self.dataset.train_data / options.batchSize)
     self.batch_size = options.batchSize
@@ -50,7 +53,11 @@ function solver.update(self)
     if ((sgd.learningRateDecayStep ~= 0) and
         (epoch % sgd.learningRateDecayStep == 0)
        ) then
-        sgd.learningRate = sgd.learningRate * sgd.learningRateDecay
+        if (sgd.learningRateClip) then
+            sgd.learningRate = math.min(sgd.learningRateClip, sgd.learningRate * sgd.learningRateDecay)
+        else
+            sgd.learningRate = sgd.learningRate * sgd.learningRateDecay
+        end
     end
 end
 
@@ -85,7 +92,6 @@ function solver.run_training_epoch(self)
     local weightDecay = self.state.weightDecay
 
     self:update()
-    self:shuffle_data()
 
     model:training()
 
@@ -101,26 +107,19 @@ function solver.run_training_epoch(self)
 
         -- create closure to evaluate E(W) and dE/dW
         local eval_E = function(weights)
-            -- reset gradients
-            dE_dw:zero()
-
             -- evaluate function for complete minibatch
             local f = model:forward(x)
             local loss = cost:forward(f, y)
+
+            -- reset gradients
+            dE_dw:zero()
             -- estimate gradients dE_dw (stored in model)
             local dE_df = cost:backward(f, y)
             model:backward(x, dE_df)
 
-            if (weightDecay ~= 0) then
-                local norm = torch.norm
-
-                -- Loss with weight decay:
-                loss = loss + weightDecay * 0.5 * (norm(weights, 2) ^ 2)
-
-                -- Gradients:
-                dE_dw:add(weightDecay, weights)
-            end
-
+            -- print("Loss: " .. loss .. "; ")
+            -- print("LGrad: amin " .. torch.min(dE_df) .. ", amax " .. torch.max(dE_df))
+            -- print("LGrad: amin " .. torch.min(dE_dw) .. ", amax " .. torch.max(dE_dw))
             -- print("w:", weights:min(), weights:max())
             -- print("f:", f:min(), f:max())
 

@@ -8,7 +8,7 @@
 
 
 local nn = require 'nn'
-local cunn = require 'cunn'
+require 'cunn'
 local cudnn = require 'cudnn'
 
 local function create_model_camvid()
@@ -56,4 +56,4 @@ local function create_model_camvid()
     return model, loss
 end
 
-return create_model_camvid()
+return create_model_camvid
