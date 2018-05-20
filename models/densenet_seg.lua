@@ -42,6 +42,22 @@ local function create_model_camvid(options)
         end
     end
 
+    local function shortcut_ds(nInputPlane, nOutputPlane, stride)
+        if (nInputPlane ~= nOutputPlane) or (stride ~= 1) then
+            return Convolution(nInputPlane, nOutputPlane, 1, 1, stride, stride)
+        else
+            return nn.Identity()
+        end
+    end
+
+    local function shortcut_us(nInputPlane, nOutputPlane, stride)
+        if (nInputPlane ~= nOutputPlane) or (stride ~= 1) then
+            return Upconvolution(nInputPlane, nOutputPlane, 4, 4, stride, stride, 1, 1)
+        else
+            return nn.Identity()
+        end
+    end
+
     -- The basic residual layer block for 18 and 34 layer network, and the
     -- CIFAR networks
     local function basicblock(n, stride)
@@ -233,6 +249,70 @@ local function create_model_camvid(options)
             :add(nn.CAddTable(true))
     end
 
+    local function upsamplingblock9(bottomdim, outputdim)
+        local internaldim = bottomdim
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim))
+        upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
+        upsampling:add(Convolution(bottomdim, internaldim, 3, 3, 1, 1, 1, 1))
+        upsampling:add(SBatchNorm(internaldim))
+        upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
+        upsampling:add(Upconvolution(internaldim, outputdim, 4, 4, 2, 2, 1, 1))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.CAddTable(true))
+    end
+
+    local function denseblock_step(inputChannels, k)
+        local skip = nn.Identity()
+
+        local op = nn.Sequential()
+            :add(SBatchNorm(inputChannels))
+            :add(ReLU(true))
+            :add(Dropout(0.25))
+            :add(Convolution(inputChannels, k, 3, 3, 1, 1, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(op)
+                )
+            :add(nn.JoinTable(2))
+    end
+
+    local function dense(inputChannels, k, count)
+        stride = stride or 1
+
+        local denseblock = nn.Sequential()
+
+        local innerChannels = inputChannels
+        for i=1,count do
+            denseblock:add(denseblock_step(innerChannels, k))
+            innerChannels = innerChannels + k
+        end
+        
+        return denseblock
+    end
+
+    local function basicblock2(inputChannels, k, count, proj)
+        local outputChannels = inputChannels + k * count
+        return nn.Sequential()
+            :add(dense(inputChannels, k, count))
+            :add(SBatchNorm(outputChannels))
+            :add(ReLU(true))
+            :add(Dropout(0.25))
+            :add(proj(outputChannels, outputChannels, 2))
+    end
+
     -- Creates block with the followning structure:
     -- input -> residual block -> bottom block        -> eltwise sum -> upsampling block -> output
     --   /                     -> residual connection ->
@@ -291,49 +371,36 @@ local function create_model_camvid(options)
     end
 
     local model = nn.Sequential()
-    -- Configurations for ResNet:
-    --  num. residual blocks, num features, residual block function
-    local cfg = {
-        [18]  = {{2, 2, 2, 2}, 512, basicblock},
-        [34]  = {{3, 4, 6, 3}, 512, basicblock},
-        [50]  = {{3, 4, 6, 3}, 2048, bottleneck},
-        [101] = {{3, 4, 23, 3}, 2048, bottleneck},
-        [152] = {{3, 8, 36, 3}, 2048, bottleneck},
-    }
-
-    assert(cfg[depth], 'Invalid depth: ' .. tostring(depth))
-    local def, nFeatures, block = table.unpack(cfg[depth])
     iChannels = 64
-    print(' | ResNet-' .. depth .. ' ImageNet')
 
-    -- The ResNet ImageNet model
-    model:add(Convolution(3,64,7,7,2,2,3,3)) -- original 3,64,7,7,2,2,3,3
-    model:add(SBatchNorm(64))
-    model:add(ReLU(true))
-    model:add(Max(3,3,2,2,1,1))
+    model:add(Convolution(3,64,3,3,1,1,1,1))
     -- creation order matters
-    local block1residual = layer(block, 64, def[1])
-    local block2residual = layer(block, 128, def[2], 2)
-    local block3residual = layer(block, 256, def[3], 2)
-    local block4residual = layer(block, 512, def[4], 2)
+    -- local block1_ds = basicblock2(64, 16, 2, dense, shortcut, 2)
+    -- local block2_ds = basicblock2(128, 16, 2, dense, shortcut, 2)
+    -- local block3_ds = basicblock2(160, 16, 2, dense, shortcut, 2)
+    -- local block4_ds = basicblock2(192, 16, 2, dense, shortcut, 2)
+    -- local block5 = dense(224, 16, 2, denseblock_step)
 
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 32))
-                                              :add(SBatchNorm(32))
-                                              :add(ReLU(true))
-                                              :add(Dropout(0.25))
-                                              :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
+    -- local block4 = sblock2(block5, block4_ds, basicblock2(448, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block3 = sblock2(block4, block3_ds, basicblock2(480, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block2 = sblock2(block3, block2_ds, basicblock2(512, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block1 = sblock2(block2, block1_ds, basicblock2(544, 16, 2, denseblock_step, shortcut_us, 2))
+    k = 16
+    p = 4
+    local block1_ds = basicblock2(64, k, p, shortcut_ds, 2)
+    local block2_ds = basicblock2(64 + k * p, k, p, shortcut_ds, 2)
+    local block2 = sblock2(nil, block2_ds, basicblock2(64 + k * 2 * p, k, p, shortcut_us, 2))
+    local block1 = sblock2(block2, block1_ds, basicblock2((64 + k * 3 * p) + (64 + k * p), k, p, shortcut_us, 2))
     model:add(block1)
+    
+    -- model:add(block1)
 
     -- Classifier
-    model:add(SBatchNorm(32))
+    model:add(SBatchNorm((64 + k * 3 * p) + (64 + k * p) + k * p))
     model:add(ReLU(true))
-    model:add(Upconvolution(32, class_count, 1, 1))
+    model:add(Upconvolution((64 + k * 3 * p) + (64 + k * p) + k * p, class_count, 1, 1))
 
     model = model:cuda()
-
 
     local function Kaiming(v)
         local n = v.kW*v.kH*v.nOutputPlane

@@ -7,11 +7,9 @@ function solver.init(self, model, cost, dataset, options, previous_state)
         sgd = {
             learningRate = options.learningRate,
             momentum = options.momentum,
-            learningRateDecay = options.lrDecay,
-            learningRateDecayStep = options.lrDecayStep,
-            learningRateClip = options.lrClip or 1e100,
 	        weightDecay = options.weightDecay
         },
+        basicLrDecay = options.lrDecay,
         epoch = 1
     }
 
@@ -21,7 +19,6 @@ function solver.init(self, model, cost, dataset, options, previous_state)
     self.dataset = dataset
     self.train_data, _ = dataset:get_iterators()
     self.image_size = {height = options.imHeight, width = options.imWidth}
-    self:shuffle_data()
 
     self.minibatch_count = math.floor(#self.dataset.train_data / options.batchSize)
     self.batch_size = options.batchSize
@@ -29,6 +26,7 @@ function solver.init(self, model, cost, dataset, options, previous_state)
         options.channels, options.imHeight, options.imWidth)
     self.targets = torch.CudaTensor(options.batchSize,
         options.imHeight, options.imWidth)
+    self.state.sgd.learningRateDecay = self.state.basicLrDecay / self.minibatch_count
 
     self.weights, self.dE_dw = model:getParameters() -- should be called after model:cuda()
 
@@ -45,20 +43,6 @@ end
 
 function solver.set_epoch(self, epoch)
     self.state.epoch = epoch
-end
-
-function solver.update(self)
-    local epoch = self.state.epoch
-    local sgd = self.state.sgd
-    if ((sgd.learningRateDecayStep ~= 0) and
-        (epoch % sgd.learningRateDecayStep == 0)
-       ) then
-        if (sgd.learningRateClip) then
-            sgd.learningRate = math.min(sgd.learningRateClip, sgd.learningRate * sgd.learningRateDecay)
-        else
-            sgd.learningRate = sgd.learningRate * sgd.learningRateDecay
-        end
-    end
 end
 
 function solver.load_batch(self, minibatch)
@@ -89,9 +73,8 @@ function solver.run_training_epoch(self)
     local weights = self.weights
     local sgd = self.state.sgd
     local dE_dw = self.dE_dw
-    local weightDecay = self.state.weightDecay
 
-    self:update()
+    self:shuffle_data()
 
     model:training()
 
@@ -101,9 +84,7 @@ function solver.run_training_epoch(self)
     for minibatch = 1, minibatch_count do
         local minibatch_time = sys.clock()
 
-        local batch_loading_time = minibatch_time
         local x, y = self:load_batch(minibatch)
-        batch_loading_time = sys.clock() - batch_loading_time
 
         -- create closure to evaluate E(W) and dE/dW
         local eval_E = function(weights)
@@ -117,18 +98,10 @@ function solver.run_training_epoch(self)
             local dE_df = cost:backward(f, y)
             model:backward(x, dE_df)
 
-            -- print("Loss: " .. loss .. "; ")
-            -- print("LGrad: amin " .. torch.min(dE_df) .. ", amax " .. torch.max(dE_df))
-            -- print("LGrad: amin " .. torch.min(dE_dw) .. ", amax " .. torch.max(dE_dw))
-            -- print("w:", weights:min(), weights:max())
-            -- print("f:", f:min(), f:max())
-
             return loss, dE_dw
         end
 
-        local optim_time = sys.clock()
         local _, loss = optim.sgd(eval_E, weights, sgd)
-        optim_time = sys.clock() - optim_time
 
         minibatch_time = sys.clock() - minibatch_time
         epoch_time = epoch_time + minibatch_time
@@ -137,19 +110,14 @@ function solver.run_training_epoch(self)
             "\r",
             string.format(
                 "Epoch #%d (%d/%d)" ..
-                    ", %.3fs" ..
+                    ", time %.3fs" ..
                     ", batch time %.3fs" ..
-                " (" ..
-                    "loading %.3fs" ..
-                    ", optimization %.3fs" ..
-                ")" ..
                 " | " ..
                     "lr %.2e" ..
                     ", loss %.4f",
                 epoch, minibatch, minibatch_count,
                 epoch_time, minibatch_time,
-                batch_loading_time, optim_time,
-                sgd.learningRate,
+                sgd.learningRate / (1 + sgd.evalCounter * sgd.learningRateDecay), -- from optim/sgd
                 loss[1]
             ),
             "\r")

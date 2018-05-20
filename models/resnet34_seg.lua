@@ -17,7 +17,7 @@ local function create_model_camvid(options)
     -- 2-3k epochs
     -- base lr: 1, lr decay: 0.01, wdecay: 5e-4
 
-    local depth = 18
+    local depth = 34
     local shortcutType = 'B' -- 'C' or 'B'
     local iChannels
 
@@ -49,11 +49,11 @@ local function create_model_camvid(options)
         iChannels = n
 
         local s = nn.Sequential()
-        s:add(Dropout(0.25))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(nInputPlane,n,3,3,stride,stride,1,1))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
-        s:add(Dropout(0.25))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(n,n,3,3,1,1,1,1))
         s:add(SBatchNorm(n))
 
@@ -160,7 +160,7 @@ local function create_model_camvid(options)
         local upsampling = nn.Sequential()
         upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
-        upsampling:add(Dropout(0.25))
+        -- upsampling:add(Dropout(0.25))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
 
         local skip = nn.Sequential()
@@ -323,7 +323,7 @@ local function create_model_camvid(options)
     local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 32))
                                               :add(SBatchNorm(32))
                                               :add(ReLU(true))
-                                              :add(Dropout(0.25))
+                                              -- :add(Dropout(0.25))
                                               :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
     model:add(block1)
 

@@ -20,29 +20,29 @@ local function get_file_name(path)
     return path:sub(begin_idx, end_idx)
 end
 
-local function test(model, dataset, epoch, validation, options)
+local function test_subset(model, subset, validate, save_dir, options)
     local confusion_matrix = nil
-    if (validation == true) then
-        confusion_matrix = optim.ConfusionMatrix(dataset.class_count, dataset.classes)
+    if (validate == true) then
+        confusion_matrix = optim.ConfusionMatrix(subset.class_count, subset.classes)
         confusion_matrix:zero()
     end
 
     model:evaluate()
 
-    local _, test_data = dataset:get_iterators()
+    local test_data = subset.data
     local test_data_size = #test_data
     print("Running for " .. test_data_size .. " images...")
 
-    local save_dir = paths.concat(options.inferencePath, "epoch_" .. epoch)
-	os.execute('mkdir -p ' .. save_dir)
-	local save_dir_raw = paths.concat(save_dir, 'raw')
-	os.execute('mkdir -p ' .. save_dir_raw)
-	local save_dir_painted = paths.concat(save_dir, 'painted')
-	os.execute('mkdir -p ' .. save_dir_painted)
+    os.execute('mkdir -p ' .. save_dir)
+    local save_dir_raw = paths.concat(save_dir, 'raw')
+    os.execute('mkdir -p ' .. save_dir_raw)
+    local save_dir_painted = paths.concat(save_dir, 'painted')
+    os.execute('mkdir -p ' .. save_dir_painted)
 
-    local test_list = dataset.val_list
+    local test_list = subset.list
 
     -- Preallocation for inputs
+    local image_size = {options.imHeight, options.imWidth}
     local input = torch.CudaTensor(1, 
         options.channels, options.imHeight, options.imWidth)
 
@@ -59,25 +59,27 @@ local function test(model, dataset, epoch, validation, options)
 
         local output = model:forward(input)
         local prediction = output[1]
-        -- TODO: add confusion matrix computations
 
         local max_values, max_indices = torch.max(prediction, 1)
-
-        if (validation == true) then
+        max_indices = max_indices[1][{{1, image_size[1]}, {1, image_size[2]}}]
+        
+        local image_name = get_file_name(test_list[i][1])
+        
+        if (validate == true) then
             local target = test_data[i][2]
             local mask = target:lt(255)
-            local target_size = target:size()
-            confusion_matrix:batchAdd(max_indices[1][{{1, target_size[1]}, {1, target_size[2]}}][mask]:view(-1), target[mask]:view(-1))
+            confusion_matrix:batchAdd(max_indices[mask]:view(-1), target[mask]:view(-1))
+
+            -- local target_image_painted = subset:paint_segmentation(target:float()):mul(1.0 / 255.0)
+            -- local filepath_painted = paths.concat(save_dir, image_name .. ".png")
+            -- image.save(filepath_painted, target_image_painted)
         end
-
-        local image_name = get_file_name(test_list[i][1])
-
+        
         local output_image_raw = max_indices:float():mul(1.0 / 255.0)
         local filepath_raw = paths.concat(save_dir_raw, image_name .. ".png")
         image.save(filepath_raw, output_image_raw)
         
-        local input_size = input_image:size()
-        local output_image_painted = dataset:paint_segmentation(max_indices:float()):mul(1.0 / 255.0)
+        local output_image_painted = subset:paint_segmentation(max_indices:float()):mul(1.0 / 255.0)
         local filepath_painted = paths.concat(save_dir_painted, image_name .. ".png")
         image.save(filepath_painted, output_image_painted)
     end
@@ -86,11 +88,31 @@ local function test(model, dataset, epoch, validation, options)
     print(string.format("Inference time: %.3fs", time))
     print(string.format("Average time per image: %.3fs", time / test_data_size))
 
-    if (validation == true) then
+    if (validate == true) then
         print(confusion_matrix)
     end
 
     collectgarbage()
+end
+
+local function test(model, dataset, subset_name, validate, save_dir, options)
+    local mt = { __index = dataset }
+    setmetatable(mt, dataset)
+    local subset = {}
+    setmetatable(subset, mt)
+    if (subset_name == 'train') then
+        subset.list = dataset.train_list
+        subset.data = dataset.train_data
+    elseif (subset_name == 'val') then
+        subset.list = dataset.val_list
+        subset.data = dataset.val_data
+    elseif (subset_name == 'test') then
+        subset.list = dataset.test_list
+        subset.data = dataset.test_data
+    else
+        error('Unknown subset \'' .. subset_name .. '\'')
+    end
+    test_subset(model, subset, validate, save_dir, options)
 end
 
 return test

@@ -1,44 +1,27 @@
+-- Adapter for SegNet modified CamVid dataset
+-- Data can be obtained here: https://github.com/alexgkendall/SegNet-Tutorial
+
 require 'paths'
 require 'image'
 
 local CamVid = {}
 CamVid.__index = CamVid
 CamVid.input_channel_count = 3
-CamVid.class_count = 32
 CamVid.classes = {
-    'Void',
-    'Archway',
-    'Bicyclist',
-    'Bridge',
-    'Building',
-    'Car',
-    'CartLuggagePram',
-    'Child',
-    'Column_Pole',
-    'Fence',
-    'LaneMkgsDriv',
-    'LaneMkgsNonDriv',
-    'Misc_Text',
-    'MotorcycleScooter',
-    'OtherMoving',
-    'ParkingBlock',
-    'Pedestrian',
-    'Road',
-    'RoadShoulder',
-    'Sidewalk',
-    'SignSymbol',
     'Sky',
-    'SUVPickupTruck',
-    'TrafficCone',
-    'TrafficLight',
-    'Train',
+    'Building',
+    'Pole',
+    'Road',
+    'Pavement',
     'Tree',
-    'Truck_Bus',
-    'Tunnel',
-    'VegetationMisc',
-    'Animal',
-    'Wall'
+    'SignSymbol',
+    'Fence',
+    'Car',
+    'Pedestrian',
+    'Bicyclist',
+    'Unlabelled'
 }
+CamVid.class_count = #CamVid.classes
 CamVid.train_data = nil
 CamVid.test_data = nil
 CamVid.image_size = { width = 0, height = 0 }
@@ -72,26 +55,36 @@ function CamVid.get_paths(list_file_path, dataset_path)
     return img_paths, gt_paths
 end
 
-local function crop(img, crop_size)
-    return image.crop(img, 'c', crop_size.width, crop_size.height)
+local function crop_or_pad(img, crop_size, filler)
+    local pad = ((img:size()[2] < crop_size.height) or (img:size()[3] < crop_size.width))
+    local real_crop_size = {}
+    real_crop_size.height = math.min(img:size()[2], crop_size.height)
+    real_crop_size.width = math.min(img:size()[3], crop_size.width)
+    if (pad == true) then
+        local output = torch.Tensor(img:size()[1], crop_size.height, crop_size.width)
+        if (filler ~= nil) then
+            if (type(filler) == 'number') then
+                output:fill(filler)
+            elseif (filler:size()[1] == output:size()[1]) then
+                for c = 1, output:size()[1] do
+                    output[c]:fill(filler[c])
+                end
+            else
+                error('Wrong padding filler type.')
+            end
+        end
+        output[{ {}, {1, real_crop_size.height}, {1, real_crop_size.width} }] = image.crop(img, 'c', real_crop_size.width, real_crop_size.height)
+        return output
+    else
+        return image.crop(img, 'c', real_crop_size.width, real_crop_size.height)
+    end
 end
 
-function CamVid.load_sample(self, image_path, gt_path, crop_size)
+function CamVid.load_sample(self, image_path, gt_path)
     local img = image.load(image_path, 3, 'float')
     local gt_img = nil
-    if gt_path ~= nil then
+    if (gt_path ~= nil) then
         gt_img = image.load(gt_path, 1, 'byte')
-    end
-    if crop_size ~= nil then
-        img = crop(img, crop_size)
-
-        if gt_img ~= nil then
-            gt_img = crop(gt_img, crop_size)
-        end
-    end
-
-    if gt_img ~= nil then
-        gt_img = gt_img:squeeze():float():add(1)
     end
 
     return img, gt_img
@@ -114,27 +107,38 @@ function CamVid.get_statistics(self, list)
     return {mean = dataset_mean} -- , std = dataset_std}
 end
 
-function CamVid.preprocess_input(self, input, stats)
-    -- Subtract mean, divide on std
-    for c = 1, input:size(1) do
-        if stats[mean] ~= nil then 
-            input[c]:add(-stats.mean[c])
-        end
-        if stats[std] ~= nil then
-            input[c]:div(stats.std[c])
+function CamVid.preprocess_input(self, input, target, stats, crop_size)
+    if (crop_size ~= nil) then
+        input = crop_or_pad(input, crop_size, stats[mean] or nil)
+
+        if (target ~= nil) then
+            local void_class = self.class_count - 1
+            target = crop_or_pad(target, crop_size, void_class)
+            target = target:squeeze():float():add(1)
         end
     end
+
+    if (stats ~= nil) then
+        -- Subtract mean, divide on std
+        for c = 1, input:size(1) do
+            if stats[mean] ~= nil then 
+                input[c]:add(-stats.mean[c])
+            end
+            if stats[std] ~= nil then
+                input[c]:div(stats.std[c])
+            end
+        end
+    end
+
+    return input, target
 end
 
 function CamVid.load_data(self, list, stats)
     local data = {}
     for i = 1, #list do
         local paths = list[i]
-        local input, target = self:load_sample(paths[1], paths[2], self.image_size)
-
-        if stats ~= nil then
-            self:preprocess_input(input, stats)
-        end
+        local input, target = self:load_sample(paths[1], paths[2])
+        input, target = self:preprocess_input(input, target, stats, self.image_size)
         table.insert(data, { input, target })
     end
     return data
@@ -145,39 +149,20 @@ function CamVid.get_iterators(self)
 end
 
 local colormap_rgb = {}
-colormap_rgb[1 + 0] = {0, 0, 0}
-colormap_rgb[1 + 1] = {192, 0, 128}
-colormap_rgb[1 + 2] = {0, 128, 192}
-colormap_rgb[1 + 3] = {0, 128, 64}
-colormap_rgb[1 + 4] = {128, 0, 0}
-colormap_rgb[1 + 5] = {64, 0, 128}
-colormap_rgb[1 + 6] = {64, 0, 192}
-colormap_rgb[1 + 7] = {192, 128, 64}
-colormap_rgb[1 + 8] = {192, 192, 128}
-colormap_rgb[1 + 9] = {64, 64, 128}
-colormap_rgb[1 + 10] = {128, 0, 192}
-colormap_rgb[1 + 11] = {192, 0, 64}
-colormap_rgb[1 + 12] = {128, 128, 64}
-colormap_rgb[1 + 13] = {192, 0, 192}
-colormap_rgb[1 + 14] = {128, 64, 64}
-colormap_rgb[1 + 15] = {64, 192, 128}
-colormap_rgb[1 + 16] = {64, 64, 0}
-colormap_rgb[1 + 17] = {128, 64, 128}
-colormap_rgb[1 + 18] = {128, 128, 192}
-colormap_rgb[1 + 19] = {0, 0, 192}
-colormap_rgb[1 + 20] = {192, 128, 128}
-colormap_rgb[1 + 21] = {128, 128, 128}
-colormap_rgb[1 + 22] = {64, 128, 192}
-colormap_rgb[1 + 23] = {0, 0, 64}
-colormap_rgb[1 + 24] = {0, 64, 64}
-colormap_rgb[1 + 25] = {192, 64, 128}
-colormap_rgb[1 + 26] = {128, 128, 0}
-colormap_rgb[1 + 27] = {192, 128, 192}
-colormap_rgb[1 + 28] = {64, 0, 64}
-colormap_rgb[1 + 29] = {192, 192, 0}
-colormap_rgb[1 + 30] = {64, 128, 64}
-colormap_rgb[1 + 31] = {6, 192, 0}
-colormap_rgb[1 + 255] = {0, 0, 0}
+colormap_rgb[1 + 0] =  {128,128,128}
+colormap_rgb[1 + 1] =  {128,0,0}
+colormap_rgb[1 + 2] =  {192,192,128}
+colormap_rgb[1 + 3] =  {128,64,128}
+colormap_rgb[1 + 4] =  {60,40,222}
+colormap_rgb[1 + 5] =  {128,128,0}
+colormap_rgb[1 + 6] =  {192,128,128}
+colormap_rgb[1 + 7] =  {64,64,128}
+colormap_rgb[1 + 8] =  {64,0,128}
+colormap_rgb[1 + 9] = {64,64,0}
+colormap_rgb[1 + 10] = {0,128,192}
+colormap_rgb[1 + 11] = {0,0,0}
+colormap_rgb[1 + 255] = {0,0,0}
+
 
 local function apply_colormap_r(c)
     return colormap_rgb[c][1]
@@ -224,6 +209,7 @@ local function load(dataset_path, options)
 
     local train_list = create_list(dataset_path, paths.concat(dataset_path, "list", "train.txt"))
     local val_list = create_list(dataset_path, paths.concat(dataset_path, "list", "val.txt"))
+    local test_list = create_list(dataset_path, paths.concat(dataset_path, "list", "test.txt"))
 
     camvid = CamVid.create()
     camvid.image_size = {width = options.imWidth, height = options.imHeight}
@@ -235,6 +221,10 @@ local function load(dataset_path, options)
     camvid.val_list = val_list
     camvid.val_data_stats = camvid:get_statistics(val_list)
     camvid.val_data = camvid:load_data(val_list, camvid.val_data_stats)
+
+    camvid.test_list = test_list
+    camvid.test_data_stats = camvid:get_statistics(test_list)
+    camvid.test_data = camvid:load_data(test_list, camvid.val_data_stats)
 
     return camvid
 end
