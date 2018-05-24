@@ -7,6 +7,9 @@
 -- https://gist.github.com/szagoruyko/0f5b4c5e2d2b18472854
 
 
+local nn = require 'nn'
+require 'cunn'
+local cudnn = require 'cudnn'
 
 local function create_model_camvid()
     local nin = nn.Sequential()
@@ -35,8 +38,6 @@ local function create_model_camvid()
     block(256, 384, 3, 3, 1, 1, 1, 1)
     mp(3, 3, 2, 2, 1, 1)
     
-    nin = nin:cuda()
-
     local classifier = nn.Sequential()
     classifier:add(nn.SpatialConvolution(384, 32, 1, 1))
     classifier:add(nn.ReLU(true))
@@ -44,15 +45,10 @@ local function create_model_camvid()
     classifier:add(nn.SpatialConvolution(32, 32, 1, 1))
     classifier:add(nn.SpatialUpSamplingBilinear({oheight=512, owidth=512}))
 
-    classifier = classifier:cuda()
-
     local model = nn.Sequential()
         :add(nin)
         :add(classifier)
         :cuda()
-
-    model.imageSize = 512
-    model.imageCrop = 512
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
     loss = loss:cuda()
@@ -60,4 +56,4 @@ local function create_model_camvid()
     return model, loss
 end
 
-return create_model_camvid()
+return create_model_camvid

@@ -11,39 +11,35 @@ function models.init(options)
         checkpoints.copy_model_parameters(source_model_parameters, weights)
     end
 
+    cudnn.convert(model, cudnn)
 
    -- optnet is an general library for reducing memory usage in neural networks
    if (options.optnet == true) then
         local optnet = require 'optnet'
         print('Trying to optimize memory usage with optnet...')
 
-        local sampleInput = torch.zeros(1, 3, options.imHeight, options.imWidth):type(options.tensorType)
+        local sampleInput = torch.zeros(options.batchSize, 3, options.imHeight, options.imWidth):type(options.tensorType):cuda()
 
-        collectgarbage()
-        model:forward(sampleInput)
-        mem1 = optnet.countUsedMemory(model)
-
-        optnet.optimizeMemory(model, sampleInput, {inplace = true, reuseBuffers = true, mode = 'training'})
-
-        collectgarbage()
-        model:forward(sampleInput)
-        mem2 = optnet.countUsedMemory(model)
-
-        print('Memory usage:')
-        print('Before optimization : '.. mem1.total_size/1024/1024 .. ' MB')
-        print('After optimization  : '.. mem2.total_size/1024/1024 .. ' MB')
-
-        if (mem1.total_size < mem2.total_size) then
-            print('Unrolling optimizations')
-            
-            optnet.removeOptimization(model)
-            
+        local function checkMemory(model, params)
             collectgarbage()
             model:forward(sampleInput)
-            mem3 = optnet.countUsedMemory(model)
-            
-            print('After removing optimization: '.. mem3.total_size/1024/1024 .. ' MBytes')
+            mem1 = optnet.countUsedMemory(model)
+
+            optnet.optimizeMemory(model, sampleInput, params)
+
+            collectgarbage()
+            model:forward(sampleInput)
+            mem2 = optnet.countUsedMemory(model)
+
+            print('Memory usage:')
+            print('Before optimization: ' .. mem1.total_size/1024/1024 .. ' MB')
+            print(mem1)
+            print('After optimization : ' .. mem2.total_size/1024/1024 .. ' MB')
+            print(mem2)
         end
+
+        print("Checking memory usage in training mode...")
+        checkMemory(model, {inplace = false, mode = 'training'})
    end
 
    return model, cost

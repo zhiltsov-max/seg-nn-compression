@@ -28,8 +28,8 @@ local function create_model_camvid(options)
         if useConv then
             -- 1x1 convolution
             return nn.Sequential()
+                :add(SBatchNorm(nInputPlane))
                 :add(Convolution(nInputPlane, nOutputPlane, 1, 1, stride, stride))
-                :add(SBatchNorm(nOutputPlane))
         elseif nInputPlane ~= nOutputPlane then
             -- Strided, zero-padded identity shortcut
             return nn.Sequential()
@@ -49,20 +49,20 @@ local function create_model_camvid(options)
         iChannels = n
 
         local s = nn.Sequential()
-        s:add(Dropout(0.25))
+        s:add(SBatchNorm(nInputPlane))
+        s:add(ReLU(true))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(nInputPlane,n,3,3,stride,stride,1,1))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
-        s:add(Dropout(0.25))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(n,n,3,3,1,1,1,1))
-        s:add(SBatchNorm(n))
 
         return nn.Sequential()
             :add(nn.ConcatTable()
                 :add(s)
                 :add(shortcut(nInputPlane, n, stride)))
             :add(nn.CAddTable(true))
-            :add(ReLU(true))
     end
 
     -- The bottleneck residual layer for 50, 101, and 152 layer networks
@@ -71,6 +71,8 @@ local function create_model_camvid(options)
         iChannels = n * 4
 
         local s = nn.Sequential()
+        s:add(SBatchNorm(nInputPlane))
+        s:add(ReLU(true))
         s:add(Convolution(nInputPlane,n,1,1,1,1,0,0))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
@@ -78,14 +80,12 @@ local function create_model_camvid(options)
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
         s:add(Convolution(n,n*4,1,1,1,1,0,0))
-        s:add(SBatchNorm(n * 4))
 
         return nn.Sequential()
             :add(nn.ConcatTable()
                 :add(s)
                 :add(shortcut(nInputPlane, n * 4, stride)))
             :add(nn.CAddTable(true))
-            :add(ReLU(true))
     end
 
     -- Creates count residual blocks with specified number of features
@@ -160,7 +160,7 @@ local function create_model_camvid(options)
         local upsampling = nn.Sequential()
         upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
-        upsampling:add(Dropout(0.25))
+        -- upsampling:add(Dropout(0.25))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
 
         local skip = nn.Sequential()
@@ -316,15 +316,31 @@ local function create_model_camvid(options)
     local block2residual = layer(block, 128, def[2], 2)
     local block3residual = layer(block, 256, def[3], 2)
     local block4residual = layer(block, 512, def[4], 2)
-
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 32))
-                                              :add(SBatchNorm(32))
-                                              :add(ReLU(true))
-                                              :add(Dropout(0.25))
-                                              :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
+    local block5 = layer(block, 512, 2)
+    iChannels = 256
+    local block4_us = nn.Sequential()
+        :add(upsamplingblock5(512, 256))
+        :add(layer(block, 256, 2))
+    local block4 = sblock1(block5, block4residual, block4_us)
+    iChannels = 128
+    local block3_us = nn.Sequential()
+        :add(upsamplingblock5(256, 128))
+        :add(layer(block, 128, 2))
+    local block3 = sblock1(block4, block3residual, block3_us)
+    iChannels = 64
+    local block2_us = nn.Sequential()
+        :add(upsamplingblock5(128, 64))
+        :add(layer(block, 64, 2))
+    local block2 = sblock1(block3, block2residual, block2_us)
+    iChannels = 32
+    local block1_us = nn.Sequential()
+        :add(upsamplingblock5(64, 32))
+        :add(layer(block, 32, 2))
+    local block1 = sblock1(block2, block1residual, block1_us)
+        :add(SBatchNorm(32))
+        :add(ReLU(true))
+        -- :add(Dropout(0.25))
+        :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
     model:add(block1)
 
     -- Classifier
@@ -333,7 +349,6 @@ local function create_model_camvid(options)
     model:add(Upconvolution(32, class_count, 1, 1))
 
     model = model:cuda()
-
 
     local function Kaiming(v)
         local n = v.kW*v.kH*v.nOutputPlane

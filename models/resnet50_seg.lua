@@ -17,7 +17,7 @@ local function create_model_camvid(options)
     -- 2-3k epochs
     -- base lr: 1, lr decay: 0.01, wdecay: 5e-4
 
-    local depth = 18
+    local depth = 50
     local shortcutType = 'B' -- 'C' or 'B'
     local iChannels
 
@@ -49,11 +49,11 @@ local function create_model_camvid(options)
         iChannels = n
 
         local s = nn.Sequential()
-        s:add(Dropout(0.25))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(nInputPlane,n,3,3,stride,stride,1,1))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
-        s:add(Dropout(0.25))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(n,n,3,3,1,1,1,1))
         s:add(SBatchNorm(n))
 
@@ -71,12 +71,15 @@ local function create_model_camvid(options)
         iChannels = n * 4
 
         local s = nn.Sequential()
+        -- s:add(Dropout(0.25))
         s:add(Convolution(nInputPlane,n,1,1,1,1,0,0))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(n,n,3,3,stride,stride,1,1))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
+        -- s:add(Dropout(0.25))
         s:add(Convolution(n,n*4,1,1,1,1,0,0))
         s:add(SBatchNorm(n * 4))
 
@@ -160,7 +163,7 @@ local function create_model_camvid(options)
         local upsampling = nn.Sequential()
         upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
-        upsampling:add(Dropout(0.25))
+        -- upsampling:add(Dropout(0.25))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
 
         local skip = nn.Sequential()
@@ -317,14 +320,14 @@ local function create_model_camvid(options)
     local block3residual = layer(block, 256, def[3], 2)
     local block4residual = layer(block, 512, def[4], 2)
 
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 32))
-                                              :add(SBatchNorm(32))
+    local block4 = sblock1(nil, block4residual, upsamplingblock5(2048, 1024))
+    local block3 = sblock1(block4, block3residual, upsamplingblock5(1024, 512))
+    local block2 = sblock1(block3, block2residual, upsamplingblock5(512, 256))
+    local block1 = sblock1(block2, block1residual, upsamplingblock5(256, 128))
+                                              :add(SBatchNorm(128))
                                               :add(ReLU(true))
-                                              :add(Dropout(0.25))
-                                              :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
+                                              -- :add(Dropout(0.25))
+                                              :add(Upconvolution(128, 32, 4, 4, 2, 2, 1, 1))
     model:add(block1)
 
     -- Classifier

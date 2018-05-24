@@ -1,5 +1,5 @@
 local nn = require 'nn'
-local cunn = require 'cunn'
+require 'cunn'
 local cudnn = require 'cudnn'
 
 local Convolution = nn.SpatialConvolution
@@ -8,8 +8,15 @@ local Avg = nn.SpatialAveragePooling
 local ReLU = nn.ReLU
 local Max = nn.SpatialMaxPooling
 local SBatchNorm = nn.SpatialBatchNormalization
+local Dropout = nn.SpatialDropout
 
 local function create_model_camvid(options)
+    local class_count = options.class_count
+
+    -- Learning regime:
+    -- 2-3k epochs
+    -- base lr: 1, lr decay: 0.01, wdecay: 5e-4
+
     local depth = 18
     local shortcutType = 'B' -- 'C' or 'B'
     local iChannels
@@ -35,6 +42,22 @@ local function create_model_camvid(options)
         end
     end
 
+    local function shortcut_ds(nInputPlane, nOutputPlane, stride)
+        if (nInputPlane ~= nOutputPlane) or (stride ~= 1) then
+            return Convolution(nInputPlane, nOutputPlane, 1, 1, stride, stride)
+        else
+            return nn.Identity()
+        end
+    end
+
+    local function shortcut_us(nInputPlane, nOutputPlane, stride)
+        if (nInputPlane ~= nOutputPlane) or (stride ~= 1) then
+            return Upconvolution(nInputPlane, nOutputPlane, 4, 4, stride, stride, 1, 1)
+        else
+            return nn.Identity()
+        end
+    end
+
     -- The basic residual layer block for 18 and 34 layer network, and the
     -- CIFAR networks
     local function basicblock(n, stride)
@@ -42,9 +65,11 @@ local function create_model_camvid(options)
         iChannels = n
 
         local s = nn.Sequential()
+        s:add(Dropout(0.25))
         s:add(Convolution(nInputPlane,n,3,3,stride,stride,1,1))
         s:add(SBatchNorm(n))
         s:add(ReLU(true))
+        s:add(Dropout(0.25))
         s:add(Convolution(n,n,3,3,1,1,1,1))
         s:add(SBatchNorm(n))
 
@@ -88,15 +113,15 @@ local function create_model_camvid(options)
         return s
     end
 
-    local function upsamplingblock(bottomdim, outputdim)
+    local function upsamplingblock1(bottomdim, outputdim)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(Upconvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
         upsampling:add(ReLU(true))
 
-        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(SBatchNorm(internaldim))
         upsampling:add(Upconvolution(internaldim, outputdim, 5, 5, 1, 1, 2, 2))
         upsampling:add(ReLU(true))
 
@@ -107,15 +132,15 @@ local function create_model_camvid(options)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(Upconvolution(bottomdim, internaldim, 1, 1, 2, 2, 0, 0, 1, 1))
         upsampling:add(ReLU(true))
 
-        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(SBatchNorm(internaldim))
         upsampling:add(Upconvolution(internaldim, internaldim, 3, 3, 1, 1, 1, 1))
         upsampling:add(ReLU(true))
 
-        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(SBatchNorm(internaldim))
         upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
         upsampling:add(ReLU(true))
 
@@ -126,11 +151,11 @@ local function create_model_camvid(options)
         local internaldim = outputdim
 
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(Upconvolution(bottomdim, internaldim, 3, 3, 2, 2, 1, 1, 1, 1))
         upsampling:add(ReLU(true))
 
-        upsampling:add(SBatchNorm(internaldim,1e-3))
+        upsampling:add(SBatchNorm(internaldim))
         upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
         upsampling:add(ReLU(true))
 
@@ -140,7 +165,7 @@ local function create_model_camvid(options)
     local function upsamplingblock4(bottomdim, outputdim)
 
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
         upsampling:add(ReLU(true))
 
@@ -149,9 +174,10 @@ local function create_model_camvid(options)
 
     local function upsamplingblock5(bottomdim, outputdim)
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
+        upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
-        -- upsampling:add(ReLU(true))
 
         local skip = nn.Sequential()
         skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
@@ -162,15 +188,13 @@ local function create_model_camvid(options)
                 :add(upsampling)
             )
             :add(nn.CAddTable(true))
-            :add(ReLU(true))
     end
 
     local function upsamplingblock6(bottomdim, outputdim)
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
-        -- upsampling:add(ReLU(true))
 
         local skip = nn.Sequential()
         skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
@@ -186,13 +210,12 @@ local function create_model_camvid(options)
     local function upsamplingblock7(bottomdim, outputdim)
         local internaldim = bottomdim
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
         upsampling:add(Upconvolution(bottomdim, internaldim, 4, 4, 2, 2, 1, 1))
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
         upsampling:add(Upconvolution(internaldim, outputdim, 3, 3, 1, 1, 1, 1))
-        -- upsampling:add(ReLU(true))
 
         local skip = nn.Sequential()
         skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
@@ -208,13 +231,12 @@ local function create_model_camvid(options)
     local function upsamplingblock8(bottomdim, outputdim)
         local internaldim = bottomdim
         local upsampling = nn.Sequential()
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
         upsampling:add(Upconvolution(bottomdim, internaldim, 4, 4, 2, 2, 1, 1))
-        upsampling:add(SBatchNorm(bottomdim,1e-3))
+        upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
         upsampling:add(Upconvolution(internaldim, outputdim, 5, 5, 1, 1, 2, 2))
-        -- upsampling:add(ReLU(true))
 
         local skip = nn.Sequential()
         skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
@@ -227,23 +249,87 @@ local function create_model_camvid(options)
             :add(nn.CAddTable(true))
     end
 
+    local function upsamplingblock9(bottomdim, outputdim)
+        local internaldim = bottomdim
+        local upsampling = nn.Sequential()
+        upsampling:add(SBatchNorm(bottomdim))
+        upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
+        upsampling:add(Convolution(bottomdim, internaldim, 3, 3, 1, 1, 1, 1))
+        upsampling:add(SBatchNorm(internaldim))
+        upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
+        upsampling:add(Upconvolution(internaldim, outputdim, 4, 4, 2, 2, 1, 1))
+
+        local skip = nn.Sequential()
+        skip:add(Upconvolution(bottomdim, outputdim, 1, 1, 2, 2, 0, 0, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(upsampling)
+            )
+            :add(nn.CAddTable(true))
+    end
+
+    local function denseblock_step(inputChannels, k)
+        local skip = nn.Identity()
+
+        local op = nn.Sequential()
+            :add(SBatchNorm(inputChannels))
+            :add(ReLU(true))
+            :add(Dropout(0.25))
+            :add(Convolution(inputChannels, k, 3, 3, 1, 1, 1, 1))
+
+        return nn.Sequential()
+            :add(nn.ConcatTable()
+                :add(skip)
+                :add(op)
+                )
+            :add(nn.JoinTable(2))
+    end
+
+    local function dense(inputChannels, k, count)
+        stride = stride or 1
+
+        local denseblock = nn.Sequential()
+
+        local innerChannels = inputChannels
+        for i=1,count do
+            denseblock:add(denseblock_step(innerChannels, k))
+            innerChannels = innerChannels + k
+        end
+        
+        return denseblock
+    end
+
+    local function basicblock2(inputChannels, k, count, proj)
+        local outputChannels = inputChannels + k * count
+        return nn.Sequential()
+            :add(dense(inputChannels, k, count))
+            :add(SBatchNorm(outputChannels))
+            :add(ReLU(true))
+            :add(Dropout(0.25))
+            :add(proj(outputChannels, outputChannels, 2))
+    end
+
     -- Creates block with the followning structure:
     -- input -> residual block -> bottom block        -> eltwise sum -> upsampling block -> output
     --   /                     -> residual connection ->
     -- input dim = output dim
     -- bottom block input dim = bottom block output dim
-    local sblock1 = function(bottomblock, residualblock, upsamplingblock)
+    local sblock1 = function(bottomblock, downsamplingblock, upsamplingblock)
         local block = nn.Sequential()
-        if (bottomblock ~= nil) and (residualblock ~= nil) then
-            block:add(residualblock)
+        if (bottomblock ~= nil) and (downsamplingblock ~= nil) then
+            block:add(downsamplingblock)
             block:add(nn.ConcatTable()
                     :add(nn.Identity())
                     :add(bottomblock)
                     )
             block:add(nn.CAddTable(true))
         else 
-            if residualblock ~= nil then
-                block:add(residualblock)
+            if downsamplingblock ~= nil then
+                block:add(downsamplingblock)
             end
             
             if bottomblock ~= nil then
@@ -258,18 +344,18 @@ local function create_model_camvid(options)
         return block
     end
 
-    local sblock2 = function(bottomblock, residualblock, upsamplingblock)
+    local sblock2 = function(bottomblock, downsamplingblock, upsamplingblock)
         local block = nn.Sequential()
-        if (bottomblock ~= nil) and (residualblock ~= nil) then
-            block:add(residualblock)
+        if (bottomblock ~= nil) and (downsamplingblock ~= nil) then
+            block:add(downsamplingblock)
             block:add(nn.ConcatTable()
                     :add(nn.Identity())
                     :add(bottomblock)
                     )
             block:add(nn.JoinTable(2))
         else 
-            if residualblock ~= nil then
-                block:add(residualblock)
+            if downsamplingblock ~= nil then
+                block:add(downsamplingblock)
             end
             
             if bottomblock ~= nil then
@@ -285,46 +371,36 @@ local function create_model_camvid(options)
     end
 
     local model = nn.Sequential()
-    -- Configurations for ResNet:
-    --  num. residual blocks, num features, residual block function
-    local cfg = {
-        [18]  = {{2, 2, 2, 2}, 512, basicblock},
-        [34]  = {{3, 4, 6, 3}, 512, basicblock},
-        [50]  = {{3, 4, 6, 3}, 2048, bottleneck},
-        [101] = {{3, 4, 23, 3}, 2048, bottleneck},
-        [152] = {{3, 8, 36, 3}, 2048, bottleneck},
-    }
-
-    assert(cfg[depth], 'Invalid depth: ' .. tostring(depth))
-    local def, nFeatures, block = table.unpack(cfg[depth])
     iChannels = 64
-    print(' | ResNet-' .. depth .. ' ImageNet')
 
-    -- The ResNet ImageNet model
-    model:add(Convolution(3,64,7,7,2,2,3,3)) -- original 3,64,7,7,2,2,3,3
-    model:add(SBatchNorm(64))
-    model:add(ReLU(true))
-    model:add(Max(3,3,2,2,1,1))
+    model:add(Convolution(3,64,3,3,1,1,1,1))
     -- creation order matters
-    local block1residual = layer(block, 64, def[1])
-    local block2residual = layer(block, 128, def[2], 2)
-    local block3residual = layer(block, 256, def[3], 2)
-    local block4residual = layer(block, 512, def[4], 2)
+    -- local block1_ds = basicblock2(64, 16, 2, dense, shortcut, 2)
+    -- local block2_ds = basicblock2(128, 16, 2, dense, shortcut, 2)
+    -- local block3_ds = basicblock2(160, 16, 2, dense, shortcut, 2)
+    -- local block4_ds = basicblock2(192, 16, 2, dense, shortcut, 2)
+    -- local block5 = dense(224, 16, 2, denseblock_step)
 
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 64))
-											  :add(upsamplingblock5(64, 64))
+    -- local block4 = sblock2(block5, block4_ds, basicblock2(448, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block3 = sblock2(block4, block3_ds, basicblock2(480, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block2 = sblock2(block3, block2_ds, basicblock2(512, 16, 2, denseblock_step, shortcut_us, 2))
+    -- local block1 = sblock2(block2, block1_ds, basicblock2(544, 16, 2, denseblock_step, shortcut_us, 2))
+    k = 16
+    p = 4
+    local block1_ds = basicblock2(64, k, p, shortcut_ds, 2)
+    local block2_ds = basicblock2(64 + k * p, k, p, shortcut_ds, 2)
+    local block2 = sblock2(nil, block2_ds, basicblock2(64 + k * 2 * p, k, p, shortcut_us, 2))
+    local block1 = sblock2(block2, block1_ds, basicblock2((64 + k * 3 * p) + (64 + k * p), k, p, shortcut_us, 2))
     model:add(block1)
+    
+    -- model:add(block1)
 
     -- Classifier
-    model:add(SBatchNorm(64,1e-3))
+    model:add(SBatchNorm((64 + k * 3 * p) + (64 + k * p) + k * p))
     model:add(ReLU(true))
-    model:add(Upconvolution(64, 32, 1, 1))
+    model:add(Upconvolution((64 + k * 3 * p) + (64 + k * p) + k * p, class_count, 1, 1))
 
     model = model:cuda()
-
 
     local function Kaiming(v)
         local n = v.kW*v.kH*v.nOutputPlane
@@ -362,7 +438,7 @@ local function create_model_camvid(options)
     local function BNInit(name)
         for k,v in pairs(model:findModules(name)) do
             Constant(v.weight, 1)
-            NoBias(v)
+            -- NoBias(v)
         end
     end
 

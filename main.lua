@@ -2,11 +2,12 @@ require 'pl'
 local lapp = require 'pl.lapp'
 
 local nn = require 'nn'
-local cunn = require 'cunn'
+require 'cunn'
 local cudnn = require 'cudnn'
 local models = require 'models.init'
 local datasets = require 'datasets.common_loader'
 local checkpoints = require 'checkpoints'
+require 'paths'
 
 
 function parse_args(arg)
@@ -20,7 +21,6 @@ function parse_args(arg)
         Training Related:
         --learningRate          (default 5e-4)        learning rate
         --lrDecay               (default 1e-1)        Learning rate decay
-        --lrDecayStep           (default 100)         Learning rate decay step (in # epochs)
         --weightDecay           (default 5e-4)        L2 penalty on the weights
         --momentum              (default 0.9)         Momentum
         -b,--batchSize          (default 10)          Batch size
@@ -44,6 +44,7 @@ function parse_args(arg)
         --dataset               (default voc)         Dataset type: voc (PASCAL VOC 2012), camvid
         --imHeight              (default 512)         Image height (voc: 512)
         --imWidth               (default 512)         Image width  (voc: 512)
+        --class_count           (default 32)          Class count
         
         Model Related:
         --model                 (default none)        Model description file name
@@ -64,6 +65,10 @@ function main()
     cutorch.setDevice(opt.devid)
     print("Running on device " .. opt.devid)
 
+    cudnn.benchmark = true
+    cudnn.fastest = true
+    -- cudnn.verbose = true
+
     local model, cost = models.init(opt)
     print(model)
     print("Output shape is: " ..
@@ -74,6 +79,9 @@ function main()
             'x'
         )
     )
+    -- local parameters, _ = model:getParameters()
+    -- print("Parameters count: ")
+    -- print(parameters:size())
 
     local dataset = datasets.loadDataset(opt.dataset, opt.datapath, opt)
 
@@ -115,7 +123,14 @@ function main()
             end
 
             if ((opt.testStep ~= 0) and (epoch % opt.testStep == 0)) then
-                test(model, dataset, epoch, true, opt)
+                local subset = 'val'
+                test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
+
+                local subset = 'train'
+	            test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
+
+                local subset = 'test'
+                test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
             end
 
             epoch = solver:get_epoch()
@@ -123,7 +138,9 @@ function main()
     end
 
     if (opt.test == true) then
-        test(model, dataset, 0, true, opt)
+        print("Starting testing")
+        local subset = 'test'
+        test(model, dataset, subset, true, paths.concat(opt.inferencePath, "testing", subset), opt)
     end
 end
 

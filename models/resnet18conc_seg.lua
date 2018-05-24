@@ -15,7 +15,7 @@ local function create_model_camvid(options)
 
     -- Learning regime:
     -- 2-3k epochs
-    -- base lr: 1, lr decay: 0.01, wdecay: 5e-4
+    -- base lr: 2, lr decay: 0.01, wdecay: 5e-4
 
     local depth = 18
     local shortcutType = 'B' -- 'C' or 'B'
@@ -178,6 +178,7 @@ local function create_model_camvid(options)
         local upsampling = nn.Sequential()
         upsampling:add(SBatchNorm(bottomdim))
         upsampling:add(ReLU(true))
+        upsampling:add(Dropout(0.25))
         upsampling:add(Upconvolution(bottomdim, outputdim, 4, 4, 2, 2, 1, 1))
 
         local skip = nn.Sequential()
@@ -317,14 +318,15 @@ local function create_model_camvid(options)
     local block3residual = layer(block, 256, def[3], 2)
     local block4residual = layer(block, 512, def[4], 2)
 
-    local block4 = sblock1(nil, block4residual, upsamplingblock5(512, 256))
-    local block3 = sblock1(block4, block3residual, upsamplingblock5(256, 128))
-    local block2 = sblock1(block3, block2residual, upsamplingblock5(128, 64))
-    local block1 = sblock1(block2, block1residual, upsamplingblock5(64, 32))
-                                              :add(SBatchNorm(32))
-                                              :add(ReLU(true))
+    local block4 = sblock2(nil, block4residual, upsamplingblock6(512, 256))
+    local block3 = sblock2(block4, block3residual, upsamplingblock6(768, 128))
+    local block2 = sblock2(block3, block2residual, upsamplingblock6(384, 64))
+    local block1 = sblock2(block2, block1residual, upsamplingblock6(192, 64))
+											  :add(upsamplingblock6(128, 32))
+											  :add(SBatchNorm(64))
+											  :add(ReLU(true))
                                               :add(Dropout(0.25))
-                                              :add(Upconvolution(32, 32, 4, 4, 2, 2, 1, 1))
+											  :add(Upconvolution(64, 32, 1, 1))
     model:add(block1)
 
     -- Classifier
