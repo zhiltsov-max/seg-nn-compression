@@ -11,7 +11,10 @@ local nn = require 'nn'
 require 'cunn'
 local cudnn = require 'cudnn'
 
-local function create_model_camvid()
+local function create_model_camvid(options)
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
+
     local nin = nn.Sequential()
     local function block(...)
         local arg = {...}
@@ -31,7 +34,7 @@ local function create_model_camvid()
         nin:add(nn.SpatialMaxPooling(...))
     end
 
-    block(3, 96, 11, 11, 4, 4, 5, 5)
+    block(input_channels, 96, 11, 11, 4, 4, 5, 5)
     mp(3, 3, 2, 2, 1, 1)
     block(96, 256, 5, 5, 1, 1, 2, 2)
     mp(3, 3, 2, 2, 1, 1)
@@ -42,16 +45,14 @@ local function create_model_camvid()
     classifier:add(nn.SpatialConvolution(384, 32, 1, 1))
     classifier:add(nn.ReLU(true))
     classifier:add(nn.SpatialBatchNormalization(32,1e-3))
-    classifier:add(nn.SpatialConvolution(32, 32, 1, 1))
+    classifier:add(nn.SpatialConvolution(32, class_count, 1, 1))
     classifier:add(nn.SpatialUpSamplingBilinear({oheight=512, owidth=512}))
 
     local model = nn.Sequential()
         :add(nin)
         :add(classifier)
-        :cuda()
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end

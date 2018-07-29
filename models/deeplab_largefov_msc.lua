@@ -102,8 +102,8 @@ end
 
 
 function create_model_camvid(options)
-  local noClasses = 32
-  local nInChannels = 3
+  local noClasses = options.classCount
+  local nInChannels = options.inputChannelsCount
 
   local input = nn.Identity()()
 
@@ -138,10 +138,8 @@ function create_model_camvid(options)
 
   -- local model = nn.gModule({input}, {data_ms, pool1_ms, pool2_ms, pool3_ms, pool4_ms, fc8_, output})
   local model = nn.gModule({input}, {output})
-  model =  model:cuda()
 
   local loss = cudnn.SpatialCrossEntropyCriterion()
-  loss = loss:cuda()
 
   return model, loss
 end

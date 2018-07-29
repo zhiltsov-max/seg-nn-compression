@@ -2,6 +2,7 @@ require 'xlua'
 require 'optim'
 require 'image'
 require 'paths'
+require 'cutorch'
 
 
 local function rfind(str, pattern)
@@ -43,10 +44,12 @@ local function test_subset(model, subset, validate, save_dir, options)
 
     -- Preallocation for inputs
     local image_size = {options.imHeight, options.imWidth}
-    local input = torch.CudaTensor(1, 
-        options.channels, options.imHeight, options.imWidth)
+    local input = torch.Tensor(1,
+        options.inputChannelsCount, options.imHeight, options.imWidth
+    ):type(options.tensorType)
 
-    local time = sys.clock()
+    local total_time = 0
+
     for i = 1, test_data_size do
         if i % math.max(1, math.floor(test_data_size / 10)) then
             io.write("\r", "Inference: ", i, "/", test_data_size, "\r")
@@ -55,9 +58,15 @@ local function test_subset(model, subset, validate, save_dir, options)
         input:zero()
         
         local input_image = test_data[i][1]
-        input:copy(input_image):cuda()
+        input:copy(input_image)
 
+        cutorch.synchronize()
+        local time = sys.clock()
         local output = model:forward(input)
+        cutorch.synchronize()
+        time = sys.clock() - time
+        total_time = total_time + time
+
         local prediction = output[1]
 
         local max_values, max_indices = torch.max(prediction, 1)
@@ -83,10 +92,9 @@ local function test_subset(model, subset, validate, save_dir, options)
         local filepath_painted = paths.concat(save_dir_painted, image_name .. ".png")
         image.save(filepath_painted, output_image_painted)
     end
-    time = sys.clock() - time
     
-    print(string.format("Inference time: %.3fs", time))
-    print(string.format("Average time per image: %.3fs", time / test_data_size))
+    print(string.format("Inference time: %.3fs", total_time))
+    print(string.format("Average time per image: %.3fs", total_time / test_data_size))
 
     if (validate == true) then
         print(confusion_matrix)

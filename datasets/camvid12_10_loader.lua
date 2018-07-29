@@ -206,9 +206,9 @@ local function load(dataset_path, options)
         return result
     end
 
-    local train_list = create_list(dataset_path, paths.concat(dataset_path, "list", "train.txt"))
-    local val_list = create_list(dataset_path, paths.concat(dataset_path, "list", "val.txt"))
-    local test_list = create_list(dataset_path, paths.concat(dataset_path, "list", "test.txt"))
+    local train_list = create_list(dataset_path, paths.concat(dataset_path, "list", "train10.txt"))
+    local val_list = create_list(dataset_path, paths.concat(dataset_path, "list", "val10.txt"))
+    local test_list = create_list(dataset_path, paths.concat(dataset_path, "list", "test10.txt"))
 
     camvid = CamVid.create()
     camvid.image_size = {width = options.imWidth, height = options.imHeight}

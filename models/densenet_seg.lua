@@ -11,7 +11,8 @@ local SBatchNorm = nn.SpatialBatchNormalization
 local Dropout = nn.SpatialDropout
 
 local function create_model_camvid(options)
-    local class_count = options.class_count
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
 
     -- Learning regime:
     -- 2-3k epochs
@@ -373,7 +374,7 @@ local function create_model_camvid(options)
     local model = nn.Sequential()
     iChannels = 64
 
-    model:add(Convolution(3,64,3,3,1,1,1,1))
+    model:add(Convolution(input_channels,64,3,3,1,1,1,1))
     -- creation order matters
     -- local block1_ds = basicblock2(64, 16, 2, dense, shortcut, 2)
     -- local block2_ds = basicblock2(128, 16, 2, dense, shortcut, 2)
@@ -399,8 +400,6 @@ local function create_model_camvid(options)
     model:add(SBatchNorm((64 + k * 3 * p) + (64 + k * p) + k * p))
     model:add(ReLU(true))
     model:add(Upconvolution((64 + k * 3 * p) + (64 + k * p) + k * p, class_count, 1, 1))
-
-    model = model:cuda()
 
     local function Kaiming(v)
         local n = v.kW*v.kH*v.nOutputPlane
@@ -450,7 +449,6 @@ local function create_model_camvid(options)
     model:get(1).gradInput = nil
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end

@@ -1,8 +1,9 @@
 require 'pl'
 local lapp = require 'pl.lapp'
-
-local nn = require 'nn'
+require 'paths'
+require 'cutorch'
 require 'cunn'
+local nn = require 'nn'
 local cudnn = require 'cudnn'
 local models = require 'models.init'
 local datasets = require 'datasets.common_loader'
@@ -37,20 +38,28 @@ function parse_args(arg)
         -i,--devid              (default 1)           Device ID (if using CUDA)
         --nGPU                  (default 1)           Number of GPUs you want to train on
         --tensorType            (default torch.CudaTensor)
+        --cudnnMode             (default fastest)     CuDNN mode: fastest | default. Fastest increases speed and memory consumption.
+        --cudnnDebug                                  Print debug information for CuDNN
+        --manualSeed            (default 0)           Random seed
+        --deterministic                               Use deterministic computations. Slower, so use it for testing only!
         
         Dataset Related:
-        --channels              (default 3)           Number of input channels
-        --datapath              (default ./datasets/VOC) Dataset location
-        --dataset               (default voc)         Dataset type: voc (PASCAL VOC 2012), camvid
-        --imHeight              (default 512)         Image height (voc: 512)
-        --imWidth               (default 512)         Image width  (voc: 512)
-        --class_count           (default 32)          Class count
+        --datapath              (default none)        Dataset location
+        --dataset               (default voc)         Dataset type: voc, camvid, camvid12
+        --imHeight              (default 512)         Image height
+        --imWidth               (default 512)         Image width
         
         Model Related:
         --model                 (default none)        Model description file name
         --transferFrom          (default none)        Try to transfer weights from model; path
         --optnet                                      Use optnet for memory optimizations
     ]]
+
+    -- Set default values
+
+    if (opt.datapath == 'none') then
+        opt.datapath = 'datasets/' .. opt.dataset
+    end
 
     return opt
 end
@@ -61,29 +70,21 @@ function main()
     print(opt)
 
     torch.setdefaulttensortype('torch.FloatTensor')
-    
     cutorch.setDevice(opt.devid)
-    print("Running on device " .. opt.devid)
-
-    cudnn.benchmark = true
-    cudnn.fastest = true
-    -- cudnn.verbose = true
-
-    local model, cost = models.init(opt)
-    print(model)
-    print("Output shape is: " ..
-        table.concat(
-            torch.totable(
-                model:forward(torch.Tensor(1, 3, opt.imHeight, opt.imWidth):cuda()):size()
-            ),
-            'x'
-        )
-    )
-    -- local parameters, _ = model:getParameters()
-    -- print("Parameters count: ")
-    -- print(parameters:size())
+    cudnn.benchmark = (opt.cudnnMode == 'fastest')
+    cudnn.fastest = (opt.cudnnMode == 'fastest')
+    cudnn.verbose = (opt.cudnnDebug == true)
+    if opt.manualSeed ~= 0 then
+        torch.manualSeed(opt.manualSeed)
+        cutorch.manualSeedAll(opt.manualSeed)
+        math.randomseed(opt.manualSeed)
+    end
 
     local dataset = datasets.loadDataset(opt.dataset, opt.datapath, opt)
+    opt.classCount = dataset.class_count
+    opt.inputChannelsCount = dataset.input_channel_count
+
+    local model, cost = models.init(opt)
 
     local solver = nil
     if (opt.train == true) then
@@ -92,9 +93,9 @@ function main()
 
         if (opt.snapshot ~= 'none') then
             print('Loading checkpoint from \'' .. opt.snapshot .. '\'')
-            local old_model_state, old_solver_state = checkpoints.load(opt.snapshot)
-            models.restore_model_state(old_model_state, model)
-            solver:init(model, cost, dataset, opt, old_solver_state)
+            local model_state, solver_state = checkpoints.load(opt.snapshot)
+            models.restore_model_state(model_state, model)
+            solver:init(model, cost, dataset, opt, solver_state)
             solver:set_epoch(solver:get_epoch() + 1)
         else
             solver:init(model, cost, dataset, opt)
@@ -109,12 +110,13 @@ function main()
         print("Loading tester")
         test = require 'test'
         
+        print("Inference directory is '" .. opt.inferencePath .. "'")
         os.execute('mkdir -p ' .. opt.inferencePath)
     end
 
-
     if (opt.train == true) then
         print("Starting training")
+        training_time = sys.clock()
         local epoch = solver:get_epoch()
         while (epoch <= opt.epochs) do
             solver:run_training_epoch()
@@ -122,12 +124,12 @@ function main()
                 checkpoints.save(model, solver, opt.save)
             end
 
-            if ((opt.testStep ~= 0) and (epoch % opt.testStep == 0)) then
+            if ((opt.test == true) and (opt.testStep ~= 0) and (epoch % opt.testStep == 0)) then
                 local subset = 'val'
                 test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
 
                 local subset = 'train'
-	            test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
+                test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
 
                 local subset = 'test'
                 test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
@@ -135,6 +137,8 @@ function main()
 
             epoch = solver:get_epoch()
         end
+        training_time = sys.clock() - training_time
+        print(string.format("Training time: %.3fs", training_time))
     end
 
     if (opt.test == true) then

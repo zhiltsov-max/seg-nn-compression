@@ -11,7 +11,8 @@ local SBatchNorm = nn.SpatialBatchNormalization
 local Dropout = nn.SpatialDropout
 
 local function create_model_camvid(options)
-    local class_count = options.class_count
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
 
     -- Learning regime:
     -- 2-3k epochs
@@ -307,7 +308,7 @@ local function create_model_camvid(options)
     print(' | ResNet-' .. depth .. ' ImageNet')
 
     -- The ResNet ImageNet model
-    model:add(Convolution(3,64,7,7,2,2,3,3)) -- original 3,64,7,7,2,2,3,3
+    model:add(Convolution(input_channels,64,7,7,2,2,3,3)) -- original 3,64,7,7,2,2,3,3
     model:add(SBatchNorm(64))
     model:add(ReLU(true))
     model:add(Max(3,3,2,2,1,1))
@@ -331,8 +332,6 @@ local function create_model_camvid(options)
     model:add(SBatchNorm(32))
     model:add(ReLU(true))
     model:add(Upconvolution(32, class_count, 1, 1))
-
-    model = model:cuda()
 
 
     local function Kaiming(v)
@@ -383,7 +382,6 @@ local function create_model_camvid(options)
     model:get(1).gradInput = nil
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end

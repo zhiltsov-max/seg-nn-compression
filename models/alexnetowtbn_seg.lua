@@ -10,12 +10,13 @@ local Max = nn.SpatialMaxPooling
 local SBatchNorm = nn.SpatialBatchNormalization
 
 local function create_model_camvid(options)
-    local class_count = options.class_count
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
 
     -- from https://code.google.com/p/cuda-convnet2/source/browse/layers/layers-imagenet-1gpu.cfg
     -- this is AlexNet that was presented in the One Weird Trick paper. http://arxiv.org/abs/1404.5997
     local features = nn.Sequential()
-    features:add(Convolution(3,64,11,11,4,4,2,2))         -- 224 -> 55
+    features:add(Convolution(input_channels,64,11,11,4,4,2,2))         -- 224 -> 55
     features:add(ReLU(true))
     features:add(SBatchNorm(64,1e-3))
     features:add(Max(3,3,2,2))                     -- 55 ->  27
@@ -62,7 +63,6 @@ local function create_model_camvid(options)
         :cuda()
 
 	local loss = cudnn.SpatialCrossEntropyCriterion()
-	loss = loss:cuda()
 
     return model, loss
 end
