@@ -92,9 +92,9 @@ function main()
 
         if (opt.snapshot ~= 'none') then
             print('Loading checkpoint from \'' .. opt.snapshot .. '\'')
-            local old_model_state, old_solver_state = checkpoints.load(opt.snapshot)
-            models.restore_model_state(old_model_state, model)
-            solver:init(model, cost, dataset, opt, old_solver_state)
+            local model_state, solver_state = checkpoints.load(opt.snapshot)
+            models.restore_model_state(model_state, model)
+            solver:init(model, cost, dataset, opt, solver_state)
             solver:set_epoch(solver:get_epoch() + 1)
         else
             solver:init(model, cost, dataset, opt)
@@ -109,12 +109,13 @@ function main()
         print("Loading tester")
         test = require 'test'
         
+        print("Inference directory is '" .. opt.inferencePath .. "'")
         os.execute('mkdir -p ' .. opt.inferencePath)
     end
 
-
     if (opt.train == true) then
         print("Starting training")
+        training_time = sys.clock()
         local epoch = solver:get_epoch()
         while (epoch <= opt.epochs) do
             solver:run_training_epoch()
@@ -122,12 +123,12 @@ function main()
                 checkpoints.save(model, solver, opt.save)
             end
 
-            if ((opt.testStep ~= 0) and (epoch % opt.testStep == 0)) then
+            if ((opt.test == true) and (opt.testStep ~= 0) and (epoch % opt.testStep == 0)) then
                 local subset = 'val'
                 test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
 
                 local subset = 'train'
-	            test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
+                test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
 
                 local subset = 'test'
                 test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
@@ -135,6 +136,8 @@ function main()
 
             epoch = solver:get_epoch()
         end
+        training_time = sys.clock() - training_time
+        print(string.format("Training time: %.3fs", training_time))
     end
 
     if (opt.test == true) then
