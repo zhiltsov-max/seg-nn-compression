@@ -51,10 +51,8 @@ local function create_model_camvid(options)
     local model = nn.Sequential()
         :add(nin)
         :add(classifier)
-        :cuda()
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end

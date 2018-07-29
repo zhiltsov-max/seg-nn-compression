@@ -60,10 +60,8 @@ local function create_model_camvid(options)
         :add(features)
         :add(upsampling)
         :add(classifier)
-        :cuda()
 
 	local loss = cudnn.SpatialCrossEntropyCriterion()
-	loss = loss:cuda()
 
     return model, loss
 end

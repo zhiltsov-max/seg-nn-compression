@@ -11,14 +11,22 @@ function models.init(options)
         checkpoints.copy_model_parameters(source_model_parameters, weights)
     end
 
-    cudnn.convert(model, cudnn)
+    model = model:type(options.tensorType)
+    cost = cost:type(options.tensorType)
 
-   -- optnet is an general library for reducing memory usage in neural networks
-   if (options.optnet == true) then
+    if (options.deterministic == false) then 
+        -- CuDNN implementation is not deterministic
+        cudnn.convert(model, cudnn)
+    end
+
+    -- optnet is a general library for reducing memory usage in neural networks
+    if (options.optnet == true) then
         local optnet = require 'optnet'
         print('Trying to optimize memory usage with optnet...')
 
-        local sampleInput = torch.zeros(options.batchSize, 3, options.imHeight, options.imWidth):type(options.tensorType):cuda()
+        local sampleInput = torch.zeros(options.batchSize, 
+            options.inputChannelsCount, options.imHeight, options.imWidth
+        ):type(options.tensorType)
 
         local function checkMemory(model, params)
             collectgarbage()

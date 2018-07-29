@@ -99,10 +99,7 @@ local function create_model_camvid(options)
     -- LinearInit(model, 'nn.Linear')
     -- BNInit(model, 'nn.SpatialBatchNormalization')
 
-    model = model:cuda()
-
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end

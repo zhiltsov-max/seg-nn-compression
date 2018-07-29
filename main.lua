@@ -1,13 +1,13 @@
 require 'pl'
 local lapp = require 'pl.lapp'
-
-local nn = require 'nn'
+require 'paths'
+require 'cutorch'
 require 'cunn'
+local nn = require 'nn'
 local cudnn = require 'cudnn'
 local models = require 'models.init'
 local datasets = require 'datasets.common_loader'
 local checkpoints = require 'checkpoints'
-require 'paths'
 
 
 function parse_args(arg)
@@ -37,6 +37,10 @@ function parse_args(arg)
         -i,--devid              (default 1)           Device ID (if using CUDA)
         --nGPU                  (default 1)           Number of GPUs you want to train on
         --tensorType            (default torch.CudaTensor)
+        --cudnnMode             (default fastest)     CuDNN mode: fastest | default. Fastest increases speed and memory consumption.
+        --cudnnDebug                                  Print debug information for CuDNN
+        --manualSeed            (default 0)           Random seed
+        --deterministic                               Use deterministic computations. Slower, so use it for testing only!
         
         Dataset Related:
         --datapath              (default none)        Dataset location
@@ -65,31 +69,21 @@ function main()
     print(opt)
 
     torch.setdefaulttensortype('torch.FloatTensor')
-    
     cutorch.setDevice(opt.devid)
-    print("Running on device " .. opt.devid)
+    cudnn.benchmark = (opt.cudnnMode == 'fastest')
+    cudnn.fastest = (opt.cudnnMode == 'fastest')
+    cudnn.verbose = (opt.cudnnDebug == true)
+    if opt.manualSeed ~= 0 then
+        torch.manualSeed(opt.manualSeed)
+        cutorch.manualSeedAll(opt.manualSeed)
+        math.randomseed(opt.manualSeed)
+    end
 
-    cudnn.benchmark = true
-    cudnn.fastest = true
-    -- cudnn.verbose = true
     local dataset = datasets.loadDataset(opt.dataset, opt.datapath, opt)
     opt.classCount = dataset.class_count
     opt.inputChannelsCount = dataset.input_channel_count
 
     local model, cost = models.init(opt)
-    print(model)
-    print("Output shape is: " ..
-        table.concat(
-            torch.totable(
-                model:forward(torch.Tensor(1, 3, opt.imHeight, opt.imWidth):cuda()):size()
-            ),
-            'x'
-        )
-    )
-    -- local parameters, _ = model:getParameters()
-    -- print("Parameters count: ")
-    -- print(parameters:size())
-
 
     local solver = nil
     if (opt.train == true) then

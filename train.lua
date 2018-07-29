@@ -1,4 +1,5 @@
 require 'optim'
+require 'cunn'
 
 local solver = {}
 
@@ -13,8 +14,11 @@ function solver.init(self, model, cost, dataset, options, previous_state)
         epoch = 1
     }
 
-    self.model = model:cuda()
-    self.cost = cost:cuda()
+    -- 'type()' used instead of 'cuda()' to ensure correct tensor type
+    -- 'cuda()' returns CudaTensor module, while there are 
+    -- 'cudaHalf()' and others, that convert model to corresponding types.
+    self.model = model:type(options.tensorType)
+    self.cost = cost:type(options.tensorType)
 
     self.dataset = dataset
     self.train_data, _ = dataset:get_iterators()

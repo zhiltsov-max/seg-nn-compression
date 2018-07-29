@@ -401,8 +401,6 @@ local function create_model_camvid(options)
     model:add(ReLU(true))
     model:add(Upconvolution((64 + k * 3 * p) + (64 + k * p) + k * p, class_count, 1, 1))
 
-    model = model:cuda()
-
     local function Kaiming(v)
         local n = v.kW*v.kH*v.nOutputPlane
         v.weight:normal(0, math.sqrt(2/n))
@@ -451,7 +449,6 @@ local function create_model_camvid(options)
     model:get(1).gradInput = nil
 
     local loss = cudnn.SpatialCrossEntropyCriterion()
-    loss = loss:cuda()
 
     return model, loss
 end
