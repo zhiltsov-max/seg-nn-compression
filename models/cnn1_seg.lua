@@ -55,7 +55,8 @@ local function BNInit(model, name)
 end
 
 local function create_model_camvid(options)
-    local class_count = options.class_count
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
 
     -- Learning regime:
     -- 2-3k epochs
@@ -64,8 +65,7 @@ local function create_model_camvid(options)
 
     local model = nn.Sequential()
     
-    model:add(BatchNorm(3))
-    model:add(Conv(3, 32, 3, 3, 1, 1, 1, 1))
+    model:add(Conv(input_channels, 32, 3, 3, 1, 1, 1, 1))
     model:add(ReLU(true))
     model:add(BatchNorm(32))
     model:add(Max(3, 3, 2, 2, 1, 1))

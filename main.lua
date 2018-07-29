@@ -39,18 +39,22 @@ function parse_args(arg)
         --tensorType            (default torch.CudaTensor)
         
         Dataset Related:
-        --channels              (default 3)           Number of input channels
-        --datapath              (default ./datasets/VOC) Dataset location
-        --dataset               (default voc)         Dataset type: voc (PASCAL VOC 2012), camvid
-        --imHeight              (default 512)         Image height (voc: 512)
-        --imWidth               (default 512)         Image width  (voc: 512)
-        --class_count           (default 32)          Class count
+        --datapath              (default none)        Dataset location
+        --dataset               (default voc)         Dataset type: voc, camvid, camvid12
+        --imHeight              (default 512)         Image height
+        --imWidth               (default 512)         Image width
         
         Model Related:
         --model                 (default none)        Model description file name
         --transferFrom          (default none)        Try to transfer weights from model; path
         --optnet                                      Use optnet for memory optimizations
     ]]
+
+    -- Set default values
+
+    if (opt.datapath == 'none') then
+        opt.datapath = 'datasets/' .. opt.dataset
+    end
 
     return opt
 end
@@ -68,6 +72,9 @@ function main()
     cudnn.benchmark = true
     cudnn.fastest = true
     -- cudnn.verbose = true
+    local dataset = datasets.loadDataset(opt.dataset, opt.datapath, opt)
+    opt.classCount = dataset.class_count
+    opt.inputChannelsCount = dataset.input_channel_count
 
     local model, cost = models.init(opt)
     print(model)
@@ -83,7 +90,6 @@ function main()
     -- print("Parameters count: ")
     -- print(parameters:size())
 
-    local dataset = datasets.loadDataset(opt.dataset, opt.datapath, opt)
 
     local solver = nil
     if (opt.train == true) then

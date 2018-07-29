@@ -102,8 +102,8 @@ end
 
 
 function create_model_camvid(options)
-  local noClasses = 32
-  local nInChannels = 3
+  local noClasses = options.classCount
+  local nInChannels = options.inputChannelsCount
 
   local input = nn.Identity()()
 

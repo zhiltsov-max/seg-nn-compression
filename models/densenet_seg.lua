@@ -11,7 +11,8 @@ local SBatchNorm = nn.SpatialBatchNormalization
 local Dropout = nn.SpatialDropout
 
 local function create_model_camvid(options)
-    local class_count = options.class_count
+    local class_count = options.classCount
+    local input_channels = options.inputChannelsCount
 
     -- Learning regime:
     -- 2-3k epochs
@@ -373,7 +374,7 @@ local function create_model_camvid(options)
     local model = nn.Sequential()
     iChannels = 64
 
-    model:add(Convolution(3,64,3,3,1,1,1,1))
+    model:add(Convolution(input_channels,64,3,3,1,1,1,1))
     -- creation order matters
     -- local block1_ds = basicblock2(64, 16, 2, dense, shortcut, 2)
     -- local block2_ds = basicblock2(128, 16, 2, dense, shortcut, 2)
