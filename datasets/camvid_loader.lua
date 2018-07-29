@@ -102,28 +102,31 @@ function CamVid.get_statistics(self, list)
     local dataset_std = torch.Tensor(self.input_channel_count):zero()
     for i = 1, #list do
         local img = image.load(list[i][1], self.input_channel_count, 'float')
-        for c = 1, self.input_channel_count do
-            dataset_mean[c] = dataset_mean[c] + img:select(1, c):mean()
-            -- dataset_std[c] = dataset_std[c] + math.sqrt(img:select(1, c):std())
-        end
+        img = img:view(self.input_channel_count, -1)
+        dataset_mean:add(img:mean(2))
+        dataset_std:add(torch.pow(img:std(2), 2))
     end
 
     dataset_mean:mul(1.0 / #list)
-    -- dataset_std:sqrt():mul(1.0 / (#list - 1.0))
+    dataset_std:sqrt():mul(1.0 / (#list - 1.0))
 
-    return {mean = dataset_mean} -- , std = dataset_std}
+    return {mean = dataset_mean, std = dataset_std}
 end
 
 function CamVid.preprocess_input(self, input, stats)
-    -- Subtract mean, divide on std
-    for c = 1, input:size(1) do
-        if stats[mean] ~= nil then 
-            input[c]:add(-stats.mean[c])
-        end
-        if stats[std] ~= nil then
-            input[c]:div(stats.std[c])
+    if (stats ~= nil) then
+        -- Subtract mean, divide on std
+        for c = 1, input:size(1) do
+            if stats.mean ~= nil then
+                input[c]:add(-stats.mean[c])
+            end
+            if stats.std ~= nil then
+                input[c]:div(stats.std[c])
+            end
         end
     end
+
+    return input
 end
 
 function CamVid.load_data(self, list, stats)
