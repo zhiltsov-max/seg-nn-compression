@@ -24,13 +24,19 @@ function solver.init(self, model, cost, dataset, options, previous_state)
     self.train_data, _ = dataset:get_iterators()
     self.image_size = {height = options.imHeight, width = options.imWidth}
 
-    self.minibatch_count = math.floor(#self.dataset.train_data / options.batchSize)
+    self.batch_count = math.ceil(#self.dataset.train_data / options.batchSize)
     self.batch_size = options.batchSize
-    self.inputs = torch.CudaTensor(options.batchSize,
-        options.channels, options.imHeight, options.imWidth)
-    self.targets = torch.CudaTensor(options.batchSize,
-        options.imHeight, options.imWidth)
-    self.state.sgd.learningRateDecay = self.state.basicLrDecay / self.minibatch_count
+
+    self.inputs = torch.Tensor(options.batchSize,
+        options.inputChannelsCount, options.imHeight, options.imWidth
+    ):type(options.tensorType)
+    self.targets = torch.Tensor(options.batchSize,
+        options.imHeight, options.imWidth
+    ):type(options.tensorType)
+
+    -- Normalize LRd to batch count, so learning with different batch sizes
+    -- gives comparable learning dynamics
+    self.state.sgd.learningRateDecay = self.state.basicLrDecay / self.batch_count
 
     self.weights, self.dE_dw = model:getParameters() -- should be called after model:cuda()
 
@@ -49,21 +55,31 @@ function solver.set_epoch(self, epoch)
     self.state.epoch = epoch
 end
 
-function solver.load_batch(self, minibatch)
+function solver.load_batch(self, batch_idx)
     local shuffle = self.shuffle
     local train_data = self.train_data
 
     self.inputs:zero()
     self.targets:zero()
 
-    for i = 1, self.batch_size do
-        local dataset_index = shuffle[(minibatch - 1) * self.batch_size + i]
+    local current_batch_size = self.batch_size
+    if (batch_idx == self.batch_count) then
+        local rest = #self.dataset.train_data % self.batch_size
+        if (rest ~= 0) then
+            current_batch_size = rest
+        end
+    end
+    
+    for i = 1, current_batch_size do
+        local dataset_index = shuffle[(batch_idx - 1) * self.batch_size + i]
         local dataset_entry = train_data[dataset_index]
         self.inputs[i]:copy(dataset_entry[1])
         self.targets[i]:copy(dataset_entry[2])
     end
 
-    return self.inputs:cuda(), self.targets:cuda()
+    -- Return only meaningful part of batch in the case of incomplete batch
+    return self.inputs [{{1, current_batch_size}}], 
+           self.targets[{{1, current_batch_size}}]
 end
 
 function solver.shuffle_data(self)
@@ -84,15 +100,15 @@ function solver.run_training_epoch(self)
 
     local epoch_time = 0
 
-    local minibatch_count = self.minibatch_count
-    for minibatch = 1, minibatch_count do
-        local minibatch_time = sys.clock()
+    local batch_count = self.batch_count
+    for batch_id = 1, batch_count do
+        local batch_time = sys.clock()
 
-        local x, y = self:load_batch(minibatch)
+        local x, y = self:load_batch(batch_id)
 
         -- create closure to evaluate E(W) and dE/dW
         local eval_E = function(weights)
-            -- evaluate function for complete minibatch
+            -- evaluate function for complete batch
             local f = model:forward(x)
             local loss = cost:forward(f, y)
 
@@ -107,8 +123,8 @@ function solver.run_training_epoch(self)
 
         local _, loss = optim.sgd(eval_E, weights, sgd)
 
-        minibatch_time = sys.clock() - minibatch_time
-        epoch_time = epoch_time + minibatch_time
+        batch_time = sys.clock() - batch_time
+        epoch_time = epoch_time + batch_time
 
         io.write(
             "\r",
@@ -119,8 +135,8 @@ function solver.run_training_epoch(self)
                 " | " ..
                     "lr %.2e" ..
                     ", loss %.4f",
-                epoch, minibatch, minibatch_count,
-                epoch_time, minibatch_time,
+                epoch, batch_id, batch_count,
+                epoch_time, batch_time,
                 sgd.learningRate / (1 + sgd.evalCounter * sgd.learningRateDecay), -- from optim/sgd
                 loss[1]
             ),
