@@ -96,7 +96,6 @@ function main()
             local model_state, solver_state = checkpoints.load(opt.snapshot)
             models.restore_model_state(model_state, model)
             solver:init(model, cost, dataset, opt, solver_state)
-            solver:set_epoch(solver:get_epoch() + 1)
         else
             solver:init(model, cost, dataset, opt)
         end
@@ -120,7 +119,11 @@ function main()
         local epoch = solver:get_epoch()
         while (epoch <= opt.epochs) do
             solver:run_training_epoch()
-            if ((opt.snapshotStep ~= 0) and (epoch % opt.snapshotStep == 0)) then
+            epoch = solver:get_epoch()
+
+            if (((opt.snapshotStep ~= 0) and (epoch % opt.snapshotStep == 0)) or
+            	(epoch == opt.epochs)) then
+            
                 checkpoints.save(model, solver, opt.save)
             end
 
@@ -134,8 +137,6 @@ function main()
                 local subset = 'test'
                 test(model, dataset, subset, true, paths.concat(opt.inferencePath, "epoch_" .. epoch, subset), opt)
             end
-
-            epoch = solver:get_epoch()
         end
         training_time = sys.clock() - training_time
         print(string.format("Training time: %.3fs", training_time))
