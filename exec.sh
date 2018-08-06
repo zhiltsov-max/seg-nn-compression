@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PATH=$HOME/install/bin:$HOME/install/cmake/bin:$PATH
+PATH=$HOME/install/bin:$PATH
 LD_LIBRARY_PATH=$HOME/install/cudnn-5.0/cuda-8.0/lib64:$LD_LIBRARY_PATH
 
 WORKING_DIR=$1

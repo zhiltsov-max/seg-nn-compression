@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PATH=$HOME/install/bin:$HOME/install/cmake/bin:$PATH
+PATH=$HOME/install/bin:$PATH
 LD_LIBRARY_PATH=$HOME/install/cudnn-5.0/cuda-8.0/lib64:$LD_LIBRARY_PATH
 
 WORKING_DIR=$1
@@ -18,14 +18,14 @@ DEVICE_IDS=0 # This way Torch won't allocate extra memory on GPUs
 CMD="th main.lua \
   --train \
   --test \
-  --dataset=camvid12_10 \
+  --dataset=camvid12 \
   --model=${MODEL} \
   --save="${SNAPSHOT_DIR}" \
   --inferencePath="${INFERENCE_DIR}" \
   --imWidth=480 --imHeight=360 \
-  --learningRate=1 --batchSize=3 \
-  --testStep=0 --weightDecay=5e-4 \
-  --epochs=20 --snapshotStep=0 \
+  --learningRate=1 --batchSize=10 \
+  --testStep=100 --weightDecay=5e-4 \
+  --epochs=400 --snapshotStep=200 \
   --lrDecay=0.015 \
   --manualSeed=42 --deterministic \
   --optnet \
